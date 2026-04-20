@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 
@@ -17,7 +17,26 @@ const STATUS_LABELS = {
   CANCELLED: "ยกเลิก",
 };
 
-export default function PaymentsClient({ session, clients, initialInvoices }) {
+async function readJsonResponse(response) {
+  const text = await response.text();
+  let data = {};
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (${response.status})`);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || `เกิดข้อผิดพลาด (${response.status})`);
+  }
+
+  return data;
+}
+
+export default function PaymentsClient({ session, clients, initialInvoices, initialError = "" }) {
   const [invoices, setInvoices] = useState(initialInvoices);
   const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -46,9 +65,14 @@ export default function PaymentsClient({ session, clients, initialInvoices }) {
     setTimeout(() => setToast(null), 3500);
   };
 
+  useEffect(() => {
+    if (initialError) {
+      showToast(initialError, false);
+    }
+  }, [initialError]);
+
   const reload = useCallback(async () => {
-    const r = await fetch("/api/admin/invoices");
-    const d = await r.json();
+    const d = await readJsonResponse(await fetch("/api/admin/invoices"));
     setInvoices(d.invoices || []);
   }, []);
 
@@ -61,14 +85,11 @@ export default function PaymentsClient({ session, clients, initialInvoices }) {
     }
     setSaving(true);
     try {
-      const r = await fetch("/api/admin/invoices", {
+      const d = await readJsonResponse(await fetch("/api/admin/invoices", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, currency: "THB" }),
-      });
-      const text = await r.text();
-      const d = text ? JSON.parse(text) : {};
-      if (!r.ok) { showToast(d.error || `เกิดข้อผิดพลาด (${r.status})`, false); return; }
+      }));
       showToast(`บันทึกการชำระเงินสำเร็จ — ${d.invoice?.number}`);
       setForm({ clientId: "", amount: "", status: "PAID", dueDate: "", notes: "", receiptNumber: "" });
       reload();
@@ -92,14 +113,11 @@ export default function PaymentsClient({ session, clients, initialInvoices }) {
   const saveEdit = async () => {
     setSaving(true);
     try {
-      const r = await fetch(`/api/admin/invoices/${editId}`, {
+      await readJsonResponse(await fetch(`/api/admin/invoices/${editId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(editForm),
-      });
-      const text = await r.text();
-      const d = text ? JSON.parse(text) : {};
-      if (!r.ok) { showToast(d.error || `เกิดข้อผิดพลาด (${r.status})`, false); return; }
+      }));
       showToast("อัพเดตสำเร็จ");
       setEditModal(false);
       reload();
@@ -110,10 +128,7 @@ export default function PaymentsClient({ session, clients, initialInvoices }) {
   const deleteInv = async (id, number) => {
     if (!confirm(`ลบ Invoice "${number}" ?`)) return;
     try {
-      const r = await fetch(`/api/admin/invoices/${id}`, { method: "DELETE" });
-      const text = await r.text();
-      const d = text ? JSON.parse(text) : {};
-      if (!r.ok) { showToast(d.error || "ลบไม่สำเร็จ", false); return; }
+      await readJsonResponse(await fetch(`/api/admin/invoices/${id}`, { method: "DELETE" }));
       showToast("ลบสำเร็จ");
       reload();
     } catch (err) {
@@ -131,7 +146,7 @@ export default function PaymentsClient({ session, clients, initialInvoices }) {
   const totalOverdue = invoices.filter(i => i.status === "OVERDUE").reduce((s, i) => s + Number(i.amount), 0);
 
   const S = {
-    bg: { background: "#0f1117", minHeight: "100vh", color: "#e8eaf0" },
+    bg: { background: "#0f1117", minHeight: "100dvh", color: "#e8eaf0" },
     nav: { background: "#16181f", borderBottom: "1px solid #2a2d3a", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" },
     card: { background: "#16181f", border: "1px solid #2a2d3a", borderRadius: 10, padding: 20 },
     input: { background: "#1e2130", border: "1px solid #2a2d3a", color: "#e8eaf0", borderRadius: 6, padding: "8px 12px", width: "100%", fontSize: 14, outline: "none" },

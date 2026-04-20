@@ -35,10 +35,15 @@ export async function GET(req) {
   const session = await auth();
   if (!isSuperAdmin(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const expenses = await prisma.expense.findMany({
-    orderBy: { date: "desc" },
-  });
-  return NextResponse.json({ expenses });
+  try {
+    const expenses = await prisma.expense.findMany({
+      orderBy: { date: "desc" },
+    });
+    return NextResponse.json({ expenses });
+  } catch (err) {
+    console.error("[GET /api/admin/expenses]", err);
+    return NextResponse.json({ error: err.message || "เกิดข้อผิดพลาดในเซิร์ฟเวอร์" }, { status: 500 });
+  }
 }
 
 // POST /api/admin/expenses

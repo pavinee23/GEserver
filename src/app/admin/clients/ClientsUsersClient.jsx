@@ -25,15 +25,58 @@ const INVOICE_BADGE = {
   CANCELLED: { bg: "#1e2130", color: "#8b8fa8", label: "ยกเลิก" },
 };
 
+const RECEIPT_ITEM_GRID = "minmax(260px,1.8fr) 96px 128px 112px 128px 168px 56px";
+const RECEIPT_ITEM_MIN_WIDTH = 1010;
+const RECEIPT_ITEM_CELL_PAD = "0 5px";
+
 function slugify(str) {
   return str.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 }
 
+function roundMoney(value) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function calcReceiptItem(item) {
+  const quantity = Math.max(0, Number(item.quantity || 0));
+  const unitPrice = Math.max(0, Number(item.unitPrice || 0));
+  const discountPercent = Math.max(0, Number(item.discountPercent || 0));
+  const discountAmount = Math.max(0, Number(item.discountAmount || 0));
+  const subtotal = roundMoney(quantity * unitPrice);
+  const totalDiscount = roundMoney((subtotal * discountPercent / 100) + discountAmount);
+  const netTotal = roundMoney(Math.max(0, subtotal - totalDiscount));
+  return { quantity, unitPrice, discountPercent, discountAmount, subtotal, totalDiscount, netTotal };
+}
+
+function createEmptyReceiptItem() {
+  return { description: "", quantity: "1", unitPrice: "", discountPercent: "", discountAmount: "" };
+}
+
+async function readJsonResponse(response) {
+  const text = await response.text();
+  let data = {};
+
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง (${response.status})`);
+    }
+  }
+
+  if (!response.ok) {
+    throw new Error(data.error || `เกิดข้อผิดพลาด (${response.status})`);
+  }
+
+  return data;
+}
+
 export default function ClientsUsersClient({ session }) {
-  const [tab, setTab] = useState("clients"); // "clients" | "users" | "invoices"
+  const [tab, setTab] = useState("clients"); // "clients" | "users" | "invoices" | "receipts" | "expenses"
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [receipts, setReceipts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
 
@@ -42,12 +85,15 @@ export default function ClientsUsersClient({ session }) {
 
   // client modal
   const [clientModal, setClientModal] = useState(false);
+  const [clientPickerModal, setClientPickerModal] = useState(false);
   const [editClientId, setEditClientId] = useState(null);
+  const [selectedClientEditId, setSelectedClientEditId] = useState("");
   const [clientForm, setClientForm] = useState({
-    name: "", slug: "", description: "", status: "COMING_SOON",
-    contactEmail: "", contactPhone: "", systemUrl: "", serviceIds: [],
+    name: "", nameTh: "", slug: "", description: "", status: "COMING_SOON",
+    contactEmail: "", contactPhone: "", address: "", systemUrl: "", logoUrl: "", serviceIds: [],
   });
   const [savingClient, setSavingClient] = useState(false);
+  const [uploadingClientLogo, setUploadingClientLogo] = useState(false);
 
   // user modal
   const [userModal, setUserModal] = useState(false);
@@ -61,8 +107,6 @@ export default function ClientsUsersClient({ session }) {
   // invoice modal
   const [invoiceModal, setInvoiceModal] = useState(false);
   const [editInvoiceId, setEditInvoiceId] = useState(null);
-  const [isReceiptMode, setIsReceiptMode] = useState(false);
-  const [selectedInvId, setSelectedInvId] = useState("");
   const [invoiceForm, setInvoiceForm] = useState({
     clientId: "", amount: "", currency: "THB", status: "PENDING", dueDate: "", notes: "", receiptNumber: "",
   });
@@ -70,12 +114,38 @@ export default function ClientsUsersClient({ session }) {
   const [filterInvoiceClientId, setFilterInvoiceClientId] = useState("");
   const [filterInvoiceStatus, setFilterInvoiceStatus] = useState("");
 
+  // receipt modal
+  const [receiptModal, setReceiptModal] = useState(false);
+  const [editReceiptId, setEditReceiptId] = useState(null);
+  const [receiptForm, setReceiptForm] = useState({
+    clientId: "",
+    customerName: "",
+    customerAddress: "",
+    customerPhone: "",
+    customerEmail: "",
+    currency: "THB",
+    issuedAt: new Date().toISOString().slice(0, 10),
+    notes: "",
+    items: [createEmptyReceiptItem()],
+  });
+  const [savingReceipt, setSavingReceipt] = useState(false);
+  const [filterReceiptClientId, setFilterReceiptClientId] = useState("");
+
   // filters
   const [clientSearch, setClientSearch] = useState("");
   const [filterClientStatus, setFilterClientStatus] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [filterUserRole, setFilterUserRole] = useState("");
   const [filterClientId, setFilterClientId] = useState("");
+
+  // customers
+  const [customers, setCustomers] = useState([]);
+  const [customerModal, setCustomerModal] = useState(false);
+  const [editCustomerId, setEditCustomerId] = useState(null);
+  const [customerForm, setCustomerForm] = useState({ clientId: "", name: "", phone: "", email: "", address: "", idCard: "", notes: "" });
+  const [savingCustomer, setSavingCustomer] = useState(false);
+  const [filterCustomerClientId, setFilterCustomerClientId] = useState("");
+  const [customerSearch, setCustomerSearch] = useState("");
 
   // expenses
   const [expenses, setExpenses] = useState([]);
@@ -104,77 +174,139 @@ export default function ClientsUsersClient({ session }) {
   };
 
   const loadClients = useCallback(async () => {
-    const r = await fetch("/api/admin/clients");
-    const d = await r.json();
+    const d = await readJsonResponse(await fetch("/api/admin/clients"));
     setClients(d.clients || []);
   }, []);
 
   const loadServices = useCallback(async () => {
-    const r = await fetch("/api/admin/services");
-    const d = await r.json();
+    const d = await readJsonResponse(await fetch("/api/admin/services"));
     setServices(d.services || []);
   }, []);
 
   const loadUsers = useCallback(async () => {
     const url = filterClientId ? `/api/admin/users?clientId=${filterClientId}` : "/api/admin/users";
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await readJsonResponse(await fetch(url));
     setUsers(d.users || []);
   }, [filterClientId]);
 
   const loadInvoices = useCallback(async () => {
     const url = filterInvoiceClientId ? `/api/admin/invoices?clientId=${filterInvoiceClientId}` : "/api/admin/invoices";
-    const r = await fetch(url);
-    const d = await r.json();
+    const d = await readJsonResponse(await fetch(url));
     setInvoices(d.invoices || []);
   }, [filterInvoiceClientId]);
 
+  const loadReceipts = useCallback(async () => {
+    const url = filterReceiptClientId ? `/api/admin/receipts?clientId=${filterReceiptClientId}` : "/api/admin/receipts";
+    const d = await readJsonResponse(await fetch(url));
+    setReceipts(d.receipts || []);
+  }, [filterReceiptClientId]);
+
   const loadExpenses = useCallback(async () => {
-    const r = await fetch("/api/admin/expenses");
-    const d = await r.json();
+    const d = await readJsonResponse(await fetch("/api/admin/expenses"));
     setExpenses(d.expenses || []);
   }, []);
 
+  const loadCustomers = useCallback(async () => {
+    const url = filterCustomerClientId ? `/api/admin/customers?clientId=${filterCustomerClientId}` : "/api/admin/customers";
+    const d = await readJsonResponse(await fetch(url));
+    setCustomers(d.customers || []);
+  }, [filterCustomerClientId]);
+
   useEffect(() => {
+    let active = true;
     setLoading(true);
-    Promise.all([loadClients(), loadUsers(), loadInvoices(), loadServices(), loadExpenses()]).finally(() => setLoading(false));
-  }, [loadClients, loadUsers, loadInvoices, loadServices, loadExpenses]);
+    Promise.allSettled([loadClients(), loadUsers(), loadInvoices(), loadReceipts(), loadServices(), loadExpenses(), loadCustomers()])
+      .then((results) => {
+        if (!active) return;
+        const failed = results.filter((result) => result.status === "rejected");
+        if (failed.length > 0) {
+          failed.forEach((result) => console.error("[admin/clients load]", result.reason));
+          showToast("โหลดข้อมูลบางส่วนไม่สำเร็จ", false);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [loadClients, loadUsers, loadInvoices, loadReceipts, loadServices, loadExpenses, loadCustomers]);
 
   // ── Client Modal ──
   const openAddClient = () => {
     setEditClientId(null);
-    setClientForm({ name: "", slug: "", description: "", status: "COMING_SOON", contactEmail: "", contactPhone: "", systemUrl: "", serviceIds: [] });
+    setClientForm({ name: "", nameTh: "", slug: "", description: "", status: "COMING_SOON", contactEmail: "", contactPhone: "", address: "", systemUrl: "", logoUrl: "", serviceIds: [] });
     setClientModal(true);
+  };
+  const openClientEditPicker = () => {
+    if (clients.length === 0) {
+      showToast("ยังไม่มีลูกค้าในระบบ", false);
+      return;
+    }
+    setSelectedClientEditId(filteredClients[0]?.id || clients[0]?.id || "");
+    setClientPickerModal(true);
   };
   const openEditClient = (c) => {
     setEditClientId(c.id);
     setClientForm({
-      name: c.name, slug: c.slug, description: c.description || "", status: c.status,
-      contactEmail: c.contactEmail || "", contactPhone: c.contactPhone || "", systemUrl: c.systemUrl || "",
+      name: c.name, nameTh: c.nameTh || "", slug: c.slug, description: c.description || "", status: c.status,
+      contactEmail: c.contactEmail || "", contactPhone: c.contactPhone || "", address: c.address || "", systemUrl: c.systemUrl || "", logoUrl: c.logoUrl || "",
       serviceIds: (c.services || []).map(cs => cs.serviceId || cs.service?.id).filter(Boolean),
     });
     setClientModal(true);
+  };
+  const startEditClientFromPicker = () => {
+    const client = clients.find(c => c.id === selectedClientEditId);
+    if (!client) {
+      showToast("กรุณาเลือกลูกค้า", false);
+      return;
+    }
+    setClientPickerModal(false);
+    openEditClient(client);
   };
   const saveClient = async () => {
     setSavingClient(true);
     try {
       const url = editClientId ? `/api/admin/clients/${editClientId}` : "/api/admin/clients";
       const method = editClientId ? "PUT" : "POST";
-      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(clientForm) });
-      const d = await r.json();
-      if (!r.ok) { showToast(d.error || "เกิดข้อผิดพลาด", false); return; }
+      await readJsonResponse(await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(clientForm) }));
       showToast(editClientId ? "อัพเดตลูกค้าสำเร็จ" : "เพิ่มลูกค้าสำเร็จ");
       setClientModal(false);
       loadClients();
+    } catch (err) {
+      showToast(err.message, false);
     } finally { setSavingClient(false); }
+  };
+  const uploadClientLogo = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingClientLogo(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("folder", "logos");
+      const data = await readJsonResponse(await fetch("/api/admin/upload", { method: "POST", body: fd }));
+      setClientForm((prev) => ({ ...prev, logoUrl: data.path || "" }));
+      showToast("อัปโหลดโลโก้สำเร็จ");
+    } catch (err) {
+      showToast(err.message, false);
+    } finally {
+      setUploadingClientLogo(false);
+      e.target.value = "";
+    }
   };
   const deleteClient = async (id, name) => {
     if (!confirm(`ลบลูกค้า "${name}" ? ผู้ใช้ที่ผูกไว้จะถูก unlink`)) return;
-    const r = await fetch(`/api/admin/clients/${id}`, { method: "DELETE" });
-    const d = await r.json();
-    if (!r.ok) { showToast(d.error || "ลบไม่สำเร็จ", false); return; }
-    showToast("ลบลูกค้าสำเร็จ");
-    loadClients(); loadUsers();
+    try {
+      await readJsonResponse(await fetch(`/api/admin/clients/${id}`, { method: "DELETE" }));
+      showToast("ลบลูกค้าสำเร็จ");
+      loadClients();
+      loadUsers();
+    } catch (err) {
+      showToast(err.message, false);
+    }
   };
 
   // ── User Modal ──
@@ -197,40 +329,72 @@ export default function ClientsUsersClient({ session }) {
       const method = editUserId ? "PUT" : "POST";
       const body = { ...userForm };
       if (!body.password) delete body.password;
-      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      const d = await r.json();
-      if (!r.ok) { showToast(d.error || "เกิดข้อผิดพลาด", false); return; }
+      await readJsonResponse(await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
       showToast(editUserId ? "อัพเดต User สำเร็จ" : "เพิ่ม User สำเร็จ");
       setUserModal(false);
       loadUsers();
+    } catch (err) {
+      showToast(err.message, false);
     } finally { setSavingUser(false); }
   };
   const deleteUser = async (id, email) => {
     if (!confirm(`ลบ User "${email}" ?`)) return;
-    const r = await fetch(`/api/admin/users/${id}`, { method: "DELETE" });
-    const d = await r.json();
-    if (!r.ok) { showToast(d.error || "ลบไม่สำเร็จ", false); return; }
-    showToast("ลบ User สำเร็จ");
-    loadUsers();
+    try {
+      await readJsonResponse(await fetch(`/api/admin/users/${id}`, { method: "DELETE" }));
+      showToast("ลบ User สำเร็จ");
+      loadUsers();
+    } catch (err) {
+      showToast(err.message, false);
+    }
   };
 
   // ── Invoice CRUD ──
   const openAddInvoice = () => {
     setEditInvoiceId(null);
-    setIsReceiptMode(false);
     setInvoiceForm({ clientId: "", amount: "", currency: "THB", status: "PENDING", dueDate: "", notes: "", receiptNumber: "" });
     setInvoiceModal(true);
   };
   const openAddReceipt = () => {
-    setEditInvoiceId(null);
-    setIsReceiptMode(true);
-    setSelectedInvId("");
-    setInvoiceForm({ clientId: "", amount: "", currency: "THB", status: "PAID", dueDate: "", notes: "", receiptNumber: "" });
-    setInvoiceModal(true);
+    setTab("receipts");
+    setEditReceiptId(null);
+    setReceiptForm({
+      clientId: "",
+      customerName: "",
+      customerAddress: "",
+      customerPhone: "",
+      customerEmail: "",
+      currency: "THB",
+      issuedAt: new Date().toISOString().slice(0, 10),
+      notes: "",
+      items: [createEmptyReceiptItem()],
+    });
+    setReceiptModal(true);
+  };
+  const openEditReceipt = (receipt) => {
+    setEditReceiptId(receipt.id);
+    setReceiptForm({
+      clientId: receipt.clientId,
+      customerName: receipt.customerName || "",
+      customerAddress: receipt.customerAddress || "",
+      customerPhone: receipt.customerPhone || "",
+      customerEmail: receipt.customerEmail || "",
+      currency: receipt.currency || "THB",
+      issuedAt: receipt.issuedAt ? new Date(receipt.issuedAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      notes: receipt.notes || "",
+      items: (receipt.items || []).length > 0
+        ? receipt.items.map(item => ({
+            description: item.description || "",
+            quantity: String(item.quantity ?? 1),
+            unitPrice: String(item.unitPrice ?? 0),
+            discountPercent: String(item.discountPercent ?? 0),
+            discountAmount: String(item.discountAmount ?? 0),
+          }))
+        : [createEmptyReceiptItem()],
+    });
+    setReceiptModal(true);
   };
   const openEditInvoice = (inv) => {
     setEditInvoiceId(inv.id);
-    setIsReceiptMode(false);
     const due = inv.dueDate ? new Date(inv.dueDate).toISOString().slice(0, 10) : "";
     setInvoiceForm({ clientId: inv.clientId, amount: String(inv.amount), currency: inv.currency, status: inv.status, dueDate: due, notes: inv.notes || "", receiptNumber: inv.receiptNumber || "" });
     setInvoiceModal(true);
@@ -238,25 +402,11 @@ export default function ClientsUsersClient({ session }) {
   const saveInvoice = async () => {
     setSavingInvoice(true);
     try {
-      let url, method, payload;
-      if (isReceiptMode) {
-        // PUT existing invoice → assign receiptNumber
-        if (!selectedInvId) { showToast("กรุณาเลือก Invoice", false); return; }
-        const selInv = invoices.find(i => i.id === selectedInvId);
-        const finalReceiptNumber = invoiceForm.receiptNumber || (selInv ? `RCP-${selInv.number}` : "");
-        url = `/api/admin/invoices/${selectedInvId}`;
-        method = "PUT";
-        payload = { status: "PAID", receiptNumber: finalReceiptNumber, notes: invoiceForm.notes || undefined };
-      } else {
-        url = editInvoiceId ? `/api/admin/invoices/${editInvoiceId}` : "/api/admin/invoices";
-        method = editInvoiceId ? "PUT" : "POST";
-        payload = { ...invoiceForm };
-      }
-      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-      const text = await r.text();
-      const d = text ? JSON.parse(text) : {};
-      if (!r.ok) { showToast(d.error || `เกิดข้อผิดพลาด (${r.status})`, false); return; }
-      showToast(isReceiptMode ? "ออกใบเสร็จสำเร็จ" : editInvoiceId ? "อัพเดต Invoice สำเร็จ" : "สร้าง Invoice สำเร็จ");
+      const url = editInvoiceId ? `/api/admin/invoices/${editInvoiceId}` : "/api/admin/invoices";
+      const method = editInvoiceId ? "PUT" : "POST";
+      const payload = { ...invoiceForm };
+      await readJsonResponse(await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }));
+      showToast(editInvoiceId ? "อัพเดต Invoice สำเร็จ" : "สร้าง Invoice สำเร็จ");
       setInvoiceModal(false);
       loadInvoices(); loadClients();
     } catch (err) {
@@ -265,12 +415,163 @@ export default function ClientsUsersClient({ session }) {
   };
   const deleteInvoice = async (id, number) => {
     if (!confirm(`ลบ Invoice "${number}" ?`)) return;
-    const r = await fetch(`/api/admin/invoices/${id}`, { method: "DELETE" });
-    const text = await r.text();
-    const d = text ? JSON.parse(text) : {};
-    if (!r.ok) { showToast(d.error || "ลบไม่สำเร็จ", false); return; }
-    showToast("ลบ Invoice สำเร็จ");
-    loadInvoices(); loadClients();
+    try {
+      await readJsonResponse(await fetch(`/api/admin/invoices/${id}`, { method: "DELETE" }));
+      showToast("ลบ Invoice สำเร็จ");
+      loadInvoices();
+      loadClients();
+    } catch (err) {
+      showToast(err.message, false);
+    }
+  };
+
+  // ── Receipt CRUD ──
+  const addReceiptItemRow = () => {
+    setReceiptForm(prev => ({ ...prev, items: [...prev.items, createEmptyReceiptItem()] }));
+  };
+  const updateReceiptItemRow = (index, key, value) => {
+    setReceiptForm(prev => ({
+      ...prev,
+      items: prev.items.map((item, idx) => idx === index ? { ...item, [key]: value } : item),
+    }));
+  };
+  const removeReceiptItemRow = (index) => {
+    setReceiptForm(prev => ({
+      ...prev,
+      items: prev.items.length === 1 ? [createEmptyReceiptItem()] : prev.items.filter((_, idx) => idx !== index),
+    }));
+  };
+  const saveReceipt = async () => {
+    setSavingReceipt(true);
+    try {
+      const items = receiptForm.items
+        .map((item) => {
+          const line = calcReceiptItem(item);
+          return {
+            description: item.description.trim(),
+            quantity: line.quantity,
+            unitPrice: line.unitPrice,
+            discountPercent: line.discountPercent,
+            discountAmount: line.discountAmount,
+            subtotal: line.subtotal,
+            totalDiscount: line.totalDiscount,
+            amount: line.netTotal,
+          };
+        })
+        .filter((item) => item.description || item.quantity || item.unitPrice || item.discountPercent || item.discountAmount);
+
+      if (!editReceiptId && !receiptForm.clientId) {
+        showToast("กรุณาเลือกผู้ออกบิล", false);
+        return;
+      }
+      if (!receiptForm.customerName.trim()) {
+        showToast("กรุณากรอกชื่อลูกค้า", false);
+        return;
+      }
+      if (items.length === 0) {
+        showToast("กรุณากรอกรายการอย่างน้อย 1 รายการ", false);
+        return;
+      }
+      if (items.some((item) =>
+        !item.description ||
+        item.quantity <= 0 ||
+        item.unitPrice < 0 ||
+        item.discountPercent < 0 ||
+        item.discountPercent > 100 ||
+        item.discountAmount < 0 ||
+        item.totalDiscount > item.subtotal
+      )) {
+        showToast("กรุณากรอกรายละเอียดรายการ ราคา และส่วนลดให้ถูกต้อง", false);
+        return;
+      }
+
+      if (editReceiptId) {
+        const d = await readJsonResponse(await fetch(`/api/admin/receipts/${editReceiptId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customerName: receiptForm.customerName.trim(),
+            customerAddress: receiptForm.customerAddress.trim(),
+            customerPhone: receiptForm.customerPhone.trim(),
+            customerEmail: receiptForm.customerEmail.trim(),
+            currency: receiptForm.currency,
+            issuedAt: receiptForm.issuedAt,
+            notes: receiptForm.notes,
+            items,
+          }),
+        }));
+        showToast(`อัพเดตใบเสร็จสำเร็จ — ${d.receipt?.number}`);
+      } else {
+        const d = await readJsonResponse(await fetch("/api/admin/receipts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            clientId: receiptForm.clientId,
+            customerName: receiptForm.customerName.trim(),
+            customerAddress: receiptForm.customerAddress.trim(),
+            customerPhone: receiptForm.customerPhone.trim(),
+            customerEmail: receiptForm.customerEmail.trim(),
+            currency: receiptForm.currency,
+            issuedAt: receiptForm.issuedAt,
+            notes: receiptForm.notes,
+            items,
+          }),
+        }));
+        showToast(`สร้างใบเสร็จสำเร็จ — ${d.receipt?.number}`);
+      }
+      setReceiptModal(false);
+      loadReceipts();
+    } catch (err) {
+      showToast("เกิดข้อผิดพลาด: " + err.message, false);
+    } finally { setSavingReceipt(false); }
+  };
+  const deleteReceipt = async (id, number) => {
+    if (!confirm(`ลบใบเสร็จ "${number}" ?`)) return;
+    try {
+      await readJsonResponse(await fetch(`/api/admin/receipts/${id}`, { method: "DELETE" }));
+      showToast("ลบใบเสร็จสำเร็จ");
+      loadReceipts();
+    } catch (err) {
+      showToast(err.message, false);
+    }
+  };
+
+  // ── Customer CRUD ──
+  const openAddCustomer = () => {
+    setEditCustomerId(null);
+    setCustomerForm({ clientId: filterCustomerClientId || clients[0]?.id || "", name: "", phone: "", email: "", address: "", idCard: "", notes: "" });
+    setCustomerModal(true);
+  };
+  const openEditCustomer = (c) => {
+    setEditCustomerId(c.id);
+    setCustomerForm({ clientId: c.clientId, name: c.name, phone: c.phone || "", email: c.email || "", address: c.address || "", idCard: c.idCard || "", notes: c.notes || "" });
+    setCustomerModal(true);
+  };
+  const saveCustomer = async () => {
+    setSavingCustomer(true);
+    try {
+      const url = editCustomerId ? `/api/admin/customers/${editCustomerId}` : "/api/admin/customers";
+      const method = editCustomerId ? "PUT" : "POST";
+      const body = editCustomerId
+        ? { name: customerForm.name, phone: customerForm.phone, email: customerForm.email, address: customerForm.address, idCard: customerForm.idCard, notes: customerForm.notes }
+        : { ...customerForm };
+      await readJsonResponse(await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+      showToast(editCustomerId ? "อัพเดตข้อมูลลูกค้าสำเร็จ" : "เพิ่มลูกค้าสำเร็จ");
+      setCustomerModal(false);
+      loadCustomers();
+    } catch (err) {
+      showToast(err.message, false);
+    } finally { setSavingCustomer(false); }
+  };
+  const deleteCustomer = async (id, name) => {
+    if (!confirm(`ลบลูกค้า "${name}" ?`)) return;
+    try {
+      await readJsonResponse(await fetch(`/api/admin/customers/${id}`, { method: "DELETE" }));
+      showToast("ลบลูกค้าสำเร็จ");
+      loadCustomers();
+    } catch (err) {
+      showToast(err.message, false);
+    }
   };
 
   // ── Expense CRUD ──
@@ -302,19 +603,14 @@ export default function ClientsUsersClient({ session }) {
       for (const file of expenseFileInputs) {
         const fd = new FormData();
         fd.append("file", file);
-        const up = await fetch("/api/admin/upload", { method: "POST", body: fd });
-        const upData = await up.json();
-        if (!up.ok) { showToast(upData.error || `อัปโหลด "${file.name}" ไม่สำเร็จ`, false); return; }
+        const upData = await readJsonResponse(await fetch("/api/admin/upload", { method: "POST", body: fd }));
         newPaths.push(upData.path);
       }
       const allPaths = [...existingPaths, ...newPaths];
       const receiptFileSaved = allPaths.length === 0 ? "" : JSON.stringify(allPaths);
       const url = editExpenseId ? `/api/admin/expenses/${editExpenseId}` : "/api/admin/expenses";
       const method = editExpenseId ? "PUT" : "POST";
-      const r = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...expenseForm, receiptFile: receiptFileSaved }) });
-      const text = await r.text();
-      const d = text ? JSON.parse(text) : {};
-      if (!r.ok) { showToast(d.error || `เกิดข้อผิดพลาด (${r.status})`, false); return; }
+      await readJsonResponse(await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...expenseForm, receiptFile: receiptFileSaved }) }));
       showToast(editExpenseId ? "อัพเดตค่าใช้จ่ายสำเร็จ" : "บันทึกค่าใช้จ่ายสำเร็จ");
       setExpenseModal(false);
       loadExpenses();
@@ -324,12 +620,13 @@ export default function ClientsUsersClient({ session }) {
   };
   const deleteExpense = async (id, number) => {
     if (!confirm(`ลบบันทึกค่าใช้จ่าย "${number}" ?`)) return;
-    const r = await fetch(`/api/admin/expenses/${id}`, { method: "DELETE" });
-    const text = await r.text();
-    const d = text ? JSON.parse(text) : {};
-    if (!r.ok) { showToast(d.error || "ลบไม่สำเร็จ", false); return; }
-    showToast("ลบบันทึกสำเร็จ");
-    loadExpenses();
+    try {
+      await readJsonResponse(await fetch(`/api/admin/expenses/${id}`, { method: "DELETE" }));
+      showToast("ลบบันทึกสำเร็จ");
+      loadExpenses();
+    } catch (err) {
+      showToast(err.message, false);
+    }
   };
 
   const getReportItems = () => {
@@ -409,15 +706,538 @@ export default function ClientsUsersClient({ session }) {
     win.document.close();
   };
 
+  const printReceipt = (receipt) => {
+    const issuer = clients.find(c => c.id === receipt.clientId) || receipt.client || {};
+    const issuerName = issuer.nameTh || issuer.name || "—";
+    const issuerAddressHtml = String(issuer.address || "").replace(/\n/g, "<br/>");
+    const customerAddressHtml = String(receipt.customerAddress || "").replace(/\n/g, "<br/>");
+    const issuedDateLabel = new Date(receipt.issuedAt).toLocaleDateString("th-TH");
+    const grossTotal = roundMoney((receipt.items || []).reduce((sum, item) => sum + (Number(item.quantity) * Number(item.unitPrice)), 0));
+    const discountTotal = roundMoney((receipt.items || []).reduce((sum, item) => {
+      const subtotal = Number(item.quantity) * Number(item.unitPrice);
+      return sum + (subtotal * (Number(item.discountPercent || 0) / 100)) + Number(item.discountAmount || 0);
+    }, 0));
+    const rows = (receipt.items || []).map((item, idx) => {
+      const subtotal = roundMoney(Number(item.quantity) * Number(item.unitPrice));
+      const percentLabel = Number(item.discountPercent || 0) > 0 ? `${Number(item.discountPercent).toLocaleString("th-TH")}%` : "";
+      const fixedLabel = Number(item.discountAmount || 0) > 0 ? Number(item.discountAmount).toLocaleString("th-TH") : "";
+      const discountLabel = percentLabel && fixedLabel
+        ? `${percentLabel} + ${fixedLabel}`
+        : percentLabel || fixedLabel || "—";
+      return `
+      <tr>
+        <td style="text-align:center">${idx + 1}</td>
+        <td>${item.description}</td>
+        <td style="text-align:right">${Number(item.quantity).toLocaleString("th-TH")}</td>
+        <td style="text-align:right">${Number(item.unitPrice).toLocaleString("th-TH")}</td>
+        <td style="text-align:right">${subtotal.toLocaleString("th-TH")}</td>
+        <td style="text-align:right">${discountLabel}</td>
+        <td style="text-align:right;font-weight:700">${Number(item.amount).toLocaleString("th-TH")}</td>
+      </tr>
+    `;
+    }).join("");
+    const win = window.open("", "_blank");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>${receipt.number}</title>
+      <style>
+        @page { size: A4 portrait; margin: 8mm 10mm; }
+        :root {
+          --ink: #14213d;
+          --muted: #5b6475;
+          --line: #d8deea;
+          --soft: #f4f7fb;
+          --accent: #174ea6;
+          --accent-soft: #eef4ff;
+          --accent-strong: #0f2f6f;
+          --success: #1f7a4d;
+        }
+        * { box-sizing: border-box; }
+        body {
+          margin: 0;
+          padding: 10px;
+          color: var(--ink);
+          font-family: 'Sarabun', Arial, sans-serif;
+          font-size: 11.5px;
+          background: linear-gradient(180deg, #f5f8fd 0%, #ffffff 200px);
+        }
+        .sheet {
+          max-width: 190mm;
+          margin: 0 auto;
+          background: #fff;
+          border: 1px solid var(--line);
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 10px 30px rgba(16, 37, 84, 0.1);
+        }
+        .topbar {
+          padding: 8px 18px;
+          background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+          color: #fff;
+          display: flex;
+          justify-content: space-between;
+          gap: 12px;
+          align-items: center;
+        }
+        .topbar-label {
+          font-size: 9.5px;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          opacity: 0.78;
+        }
+        .topbar-number {
+          font-size: 13px;
+          font-weight: 800;
+        }
+        .content {
+          padding: 14px 16px;
+        }
+        .head {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          gap: 16px;
+          margin-bottom: 12px;
+        }
+        .issuer {
+          display: flex;
+          gap: 12px;
+          align-items: flex-start;
+          flex: 1;
+          min-width: 0;
+        }
+        .logo {
+          width: 60px;
+          height: 60px;
+          border-radius: 12px;
+          object-fit: cover;
+          border: 1px solid var(--line);
+          background: #fff;
+          flex-shrink: 0;
+        }
+        .logo-fallback {
+          width: 60px;
+          height: 60px;
+          border-radius: 12px;
+          display: grid;
+          place-items: center;
+          background: linear-gradient(135deg, #dce8ff, #f2f7ff);
+          color: var(--accent);
+          font-size: 22px;
+          font-weight: 800;
+          border: 1px solid var(--line);
+          flex-shrink: 0;
+        }
+        .title {
+          font-size: 20px;
+          font-weight: 900;
+          margin-bottom: 4px;
+          line-height: 1.1;
+        }
+        .company {
+          font-size: 14px;
+          font-weight: 800;
+          margin-bottom: 5px;
+          line-height: 1.2;
+        }
+        .meta {
+          color: var(--muted);
+          line-height: 1.6;
+          font-size: 11px;
+        }
+        .doc-meta {
+          min-width: 200px;
+          padding: 10px 12px;
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          background: linear-gradient(180deg, #ffffff, var(--soft));
+          flex-shrink: 0;
+        }
+        .doc-grid {
+          display: grid;
+          grid-template-columns: 80px 1fr;
+          gap: 5px 10px;
+          align-items: start;
+        }
+        .doc-grid .label {
+          color: var(--muted);
+          font-size: 11px;
+        }
+        .doc-grid .value {
+          font-weight: 700;
+          font-size: 11.5px;
+        }
+        .party-wrap {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr);
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .party,
+        .total-card,
+        .signature-card {
+          border: 1px solid var(--line);
+          border-radius: 12px;
+          background: #fff;
+        }
+        .party {
+          padding: 10px 12px;
+          background: linear-gradient(180deg, #ffffff, #fbfcff);
+        }
+        .party-title {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          padding: 3px 8px;
+          margin-bottom: 6px;
+          border-radius: 999px;
+          background: var(--accent-soft);
+          color: var(--accent);
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.06em;
+          text-transform: uppercase;
+        }
+        .party-name {
+          font-size: 14px;
+          font-weight: 800;
+          margin-bottom: 2px;
+          line-height: 1.2;
+        }
+        table {
+          width: 100%;
+          border-collapse: separate;
+          border-spacing: 0;
+          margin-top: 8px;
+          overflow: hidden;
+          border: 1px solid var(--line);
+          border-radius: 12px;
+        }
+        th {
+          padding: 7px 9px;
+          text-align: left;
+          font-size: 10.5px;
+          font-weight: 800;
+          color: #fff;
+          background: linear-gradient(135deg, #17325f, #1d4f9d);
+        }
+        td {
+          padding: 6px 9px;
+          border-bottom: 1px solid #e9edf5;
+          vertical-align: top;
+          background: #fff;
+          font-size: 11px;
+        }
+        tbody tr:nth-child(even) td {
+          background: #f8fbff;
+        }
+        tbody tr:last-child td {
+          border-bottom: none;
+        }
+        .total-wrap {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 230px;
+          gap: 10px;
+          margin-top: 10px;
+          align-items: start;
+        }
+        .notes {
+          padding: 10px 12px;
+          border: 1px dashed #bac6db;
+          border-radius: 12px;
+          background: #fcfdff;
+          white-space: pre-wrap;
+          line-height: 1.6;
+          font-size: 11px;
+        }
+        .notes-title {
+          display: block;
+          margin-bottom: 4px;
+          color: var(--accent);
+          font-weight: 800;
+        }
+        .total-card {
+          padding: 10px 12px;
+          background: linear-gradient(135deg, #f2f8f4, #ffffff);
+        }
+        .total-line {
+          display: flex;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 4px 0;
+          color: var(--muted);
+          font-size: 11px;
+        }
+        .total-line strong {
+          color: var(--ink);
+        }
+        .grand-total {
+          margin-top: 6px;
+          padding-top: 8px;
+          border-top: 1px solid var(--line);
+        }
+        .grand-total .label {
+          display: block;
+          margin-bottom: 3px;
+          color: var(--muted);
+          font-size: 10px;
+        }
+        .grand-total .value {
+          color: var(--success);
+          font-size: 20px;
+          font-weight: 900;
+          line-height: 1.15;
+        }
+        .signature-wrap {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 240px;
+          gap: 12px;
+          margin-top: 12px;
+          align-items: end;
+        }
+        .signature-card {
+          padding: 10px 14px;
+          background: linear-gradient(180deg, #ffffff, #fbfcff);
+          min-height: 90px;
+        }
+        .signature-title {
+          color: var(--accent);
+          font-size: 11.5px;
+          font-weight: 800;
+          margin-bottom: 10px;
+        }
+        .signature-line {
+          margin-top: 28px;
+          border-top: 1.5px solid #8190a9;
+          padding-top: 6px;
+          text-align: center;
+          font-weight: 700;
+          font-size: 11px;
+        }
+        .signature-hint {
+          margin-top: 4px;
+          text-align: center;
+          color: var(--muted);
+          font-size: 10.5px;
+        }
+        .signature-date {
+          margin-top: 8px;
+          color: var(--muted);
+          font-size: 10.5px;
+        }
+        .signature-stamp {
+          margin-top: 6px;
+          color: var(--accent);
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+        }
+        .actions {
+          margin-top: 14px;
+          display: flex;
+          justify-content: flex-end;
+        }
+        .print-btn {
+          padding: 8px 20px;
+          border: none;
+          border-radius: 999px;
+          background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+          color: #fff;
+          font-size: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        @media print {
+          body { padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+          .actions { display: none; }
+        }
+      </style></head><body>
+      <div class="sheet">
+        <div class="topbar">
+          <div>
+            <div class="topbar-label">Receipt</div>
+            <div class="topbar-number">${issuerName}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="topbar-label">Receipt No.</div>
+            <div class="topbar-number">${receipt.number}</div>
+          </div>
+        </div>
+        <div class="content">
+          <div class="head">
+            <div class="issuer">
+              ${issuer.logoUrl
+                ? `<img class="logo" src="${issuer.logoUrl}" alt="${issuerName}" />`
+                : `<div class="logo-fallback">${String(issuerName || "R").trim().charAt(0).toUpperCase() || "R"}</div>`
+              }
+              <div>
+                <div class="title">ใบเสร็จรับเงิน</div>
+                <div class="company">${issuerName}</div>
+                ${issuerAddressHtml ? `<div class="meta">${issuerAddressHtml}</div>` : ""}
+                ${issuer.contactPhone ? `<div class="meta">โทร: ${issuer.contactPhone}</div>` : ""}
+                ${issuer.contactEmail ? `<div class="meta">อีเมล: ${issuer.contactEmail}</div>` : ""}
+              </div>
+            </div>
+            <div class="doc-meta">
+              <div class="doc-grid">
+                <div class="label">เลขที่</div>
+                <div class="value">${receipt.number}</div>
+                <div class="label">วันที่ออก</div>
+                <div class="value">${issuedDateLabel}</div>
+                <div class="label">สกุลเงิน</div>
+                <div class="value">${receipt.currency || "THB"}</div>
+                <div class="label">จำนวนรายการ</div>
+                <div class="value">${receipt.items?.length || 0} รายการ</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="party-wrap">
+            <div class="party">
+              <div class="party-title">ลูกค้า / ผู้รับบิล</div>
+              <div class="party-name">${receipt.customerName || "—"}</div>
+              ${customerAddressHtml ? `<div class="meta">${customerAddressHtml}</div>` : ""}
+              ${receipt.customerPhone ? `<div class="meta">โทร: ${receipt.customerPhone}</div>` : ""}
+              ${receipt.customerEmail ? `<div class="meta">อีเมล: ${receipt.customerEmail}</div>` : ""}
+            </div>
+          </div>
+
+          <table>
+        <thead>
+          <tr>
+            <th style="width:34px;text-align:center">#</th>
+            <th>รายการ</th>
+            <th style="width:54px;text-align:right">จำนวน</th>
+            <th style="width:100px;text-align:right">ราคาต่อหน่วย</th>
+            <th style="width:84px;text-align:right">ก่อนลด</th>
+            <th style="width:72px;text-align:right">ส่วนลด</th>
+            <th style="width:90px;text-align:right">รวมสุทธิ</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows || "<tr><td colspan='7' style='text-align:center;color:#777;padding:24px'>ไม่มีรายการ</td></tr>"}
+        </tbody>
+      </table>
+
+          <div class="total-wrap">
+            ${receipt.notes
+              ? `<div class="notes"><span class="notes-title">หมายเหตุ</span>${receipt.notes}</div>`
+              : "<div></div>"
+            }
+            <div class="total-card">
+              <div class="total-line"><span>ยอดก่อนหักส่วนลด</span><strong>${Number(receipt.subtotal || grossTotal).toLocaleString("th-TH")}</strong></div>
+              <div class="total-line"><span>ส่วนลดรวม</span><strong>${discountTotal.toLocaleString("th-TH")}</strong></div>
+              <div class="grand-total">
+                <span class="label">รวมทั้งสิ้น</span>
+                <div class="value">${Number(receipt.total).toLocaleString("th-TH")} ${receipt.currency || "THB"}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="signature-wrap">
+            <div></div>
+            <div class="signature-card">
+              <div class="signature-title">ผู้รับเงิน</div>
+              <div class="signature-line">ลงชื่อ ............................................................</div>
+              <div class="signature-hint">(ผู้รับเงิน / ผู้มีอำนาจลงนาม)</div>
+              <div class="signature-date">วันที่ ....................................</div>
+              <div class="signature-stamp">${issuerName}</div>
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="print-btn" onclick="window.print()">พิมพ์ใบเสร็จ</button>
+          </div>
+        </div>
+      </div>
+    </body></html>`);
+    win.document.close();
+  };
+
   const doPrintLedger = (currency) => {
-    const symMap = { THB: "฿", KRW: "₩", USD: "$" };
+    const symMap = { THB: "\u0e3f", KRW: "\u20a9", USD: "$" };
     const sym = symMap[currency] || "";
-    const fmt = n => Math.abs(n).toLocaleString("th-TH");
+
+    // Language pack
+    const L = currency === "KRW" ? {
+      locale: "ko-KR",
+      title: "\uc218\uc785\u00b7\uc9c0\ucd9c \uc7a5\ubd80",
+      printedAt: "\uc778\uc1c4 \uc77c\uc2dc",
+      incomeTotal: "\ud83d\udcb0 \uc644\uac01 \ud569\uacc4",
+      expenseTotal: "\ud83d\udcb8 \uc9c0\ucd9c \ud569\uacc4",
+      profitLabel: "\ud83d\udcc8 \uc21c\uc774\uc775",
+      lossLabel: "\ud83d\udcc9 \uc21c\uc190\uc2e4",
+      profitBanner: "\ud83d\udcc8 \uc774\uc775",
+      lossBanner: "\ud83d\udcc9 \uc190\uc2e4",
+      incomeRow: "\ud83d\udcb0 \uc218\uc785",
+      expenseRow: "\ud83d\udcb8 \uc9c0\ucd9c",
+      colNo: "#",
+      colDate: "\ub0a0\uc9dc",
+      colRef: "\ucc38\uc870\ubc88\ud638",
+      colDesc: "\ud56d\ubaa9 / \uc0c1\uc138",
+      colIncome: "\uc218\uc785",
+      colExpense: "\uc9c0\ucd9c",
+      colBalance: "\ub204\uacc4\uc794\uc561",
+      footerTotal: "\ud569\uacc4",
+      footerItems: "\uac74",
+      noData: "\ub370\uc774\ud130 \uc5c6\uc74c",
+      printBtn: "\ud83d\udda8\ufe0f \uc778\uc1c4",
+      statusMap: { PENDING: "\ubbf8\uacb0\uc81c", PAID: "\uacb0\uc81c\uc644\ub8cc", OVERDUE: "\uc5f0\uccb4", CANCELLED: "\ucd94\uc18c" },
+    } : currency === "USD" ? {
+      locale: "en-US",
+      title: "Income & Expense Ledger",
+      printedAt: "Printed",
+      incomeTotal: "\ud83d\udcb0 Total Income",
+      expenseTotal: "\ud83d\udcb8 Total Expense",
+      profitLabel: "\ud83d\udcc8 Net Profit",
+      lossLabel: "\ud83d\udcc9 Net Loss",
+      profitBanner: "\ud83d\udcc8 Profit",
+      lossBanner: "\ud83d\udcc9 Loss",
+      incomeRow: "\ud83d\udcb0 Income",
+      expenseRow: "\ud83d\udcb8 Expense",
+      colNo: "#",
+      colDate: "Date",
+      colRef: "Reference",
+      colDesc: "Item / Detail",
+      colIncome: "Income",
+      colExpense: "Expense",
+      colBalance: "Running Balance",
+      footerTotal: "Total",
+      footerItems: "items",
+      noData: "No records",
+      printBtn: "\ud83d\udda8\ufe0f Print",
+      statusMap: { PENDING: "Pending", PAID: "Paid", OVERDUE: "Overdue", CANCELLED: "Cancelled" },
+    } : {
+      locale: "th-TH",
+      title: "\u0e1a\u0e31\u0e0d\u0e0a\u0e35\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a-\u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22",
+      printedAt: "\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e40\u0e21\u0e37\u0e48\u0e2d",
+      incomeTotal: "\ud83d\udcb0 \u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a\u0e23\u0e27\u0e21",
+      expenseTotal: "\ud83d\udcb8 \u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22\u0e23\u0e27\u0e21",
+      profitLabel: "\ud83d\udcc8 \u0e01\u0e33\u0e44\u0e23\u0e2a\u0e38\u0e17\u0e18\u0e34\u0e4c",
+      lossLabel: "\ud83d\udcc9 \u0e02\u0e32\u0e14\u0e17\u0e38\u0e19\u0e2a\u0e38\u0e17\u0e18\u0e34\u0e4c",
+      profitBanner: "\ud83d\udcc8 \u0e01\u0e33\u0e44\u0e23",
+      lossBanner: "\ud83d\udcc9 \u0e02\u0e32\u0e14\u0e17\u0e38\u0e19",
+      incomeRow: "\ud83d\udcb0 \u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a",
+      expenseRow: "\ud83d\udcb8 \u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22",
+      colNo: "#",
+      colDate: "\u0e27\u0e31\u0e19\u0e17\u0e35\u0e48",
+      colRef: "\u0e40\u0e25\u0e02\u0e17\u0e35\u0e48\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07",
+      colDesc: "\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23/\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14",
+      colIncome: "\u0e23\u0e32\u0e22\u0e23\u0e31\u0e1a",
+      colExpense: "\u0e23\u0e32\u0e22\u0e08\u0e48\u0e32\u0e22",
+      colBalance: "\u0e04\u0e07\u0e40\u0e2b\u0e25\u0e37\u0e2d\u0e2a\u0e30\u0e2a\u0e21",
+      footerTotal: "\u0e23\u0e27\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14",
+      footerItems: "\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23",
+      noData: "\u0e44\u0e21\u0e48\u0e21\u0e35\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23",
+      printBtn: "\ud83d\udda8\ufe0f \u0e1e\u0e34\u0e21\u0e1e\u0e4c",
+      statusMap: { PENDING: "\u0e23\u0e2d\u0e0a\u0e33\u0e23\u0e30", PAID: "\u0e0a\u0e33\u0e23\u0e30\u0e41\u0e25\u0e49\u0e27", OVERDUE: "\u0e40\u0e01\u0e34\u0e19\u0e01\u0e33\u0e2b\u0e19\u0e14", CANCELLED: "\u0e22\u0e01\u0e40\u0e25\u0e34\u0e01" },
+    };
+
+    const fmt = n => Math.abs(n).toLocaleString(L.locale);
     const curInvoices = invoices.filter(i => (i.currency || "THB") === currency);
     const curExpenses = expenses.filter(e => (e.currency || "THB") === currency);
     const rows = [
-      ...curInvoices.map(i => ({ date: new Date(i.createdAt), type: "income", ref: i.number, desc: i.client?.name || clients.find(c => c.id === i.clientId)?.name || "—", detail: { PENDING: "รอชำระ", PAID: "ชำระแล้ว", OVERDUE: "เกินกำหนด", CANCELLED: "ยกเลิก" }[i.status] || i.status, income: Number(i.amount), expense: 0 })),
-      ...curExpenses.map(e => ({ date: new Date(e.date), type: "expense", ref: e.number, desc: e.category, detail: e.status || "รอชำระ", income: 0, expense: Number(e.amount) })),
+      ...curInvoices.map(i => ({ date: new Date(i.createdAt), type: "income", ref: i.number, desc: i.client?.name || clients.find(c => c.id === i.clientId)?.name || "\u2014", detail: L.statusMap[i.status] || i.status, income: Number(i.amount), expense: 0 })),
+      ...curExpenses.map(e => ({ date: new Date(e.date), type: "expense", ref: e.number, desc: e.category, detail: L.statusMap[e.status] || e.status || L.statusMap["PENDING"], income: 0, expense: Number(e.amount) })),
     ].sort((a, b) => a.date - b.date);
     let running = 0;
     const totalIncome = curInvoices.reduce((s, i) => s + Number(i.amount), 0);
@@ -427,24 +1247,24 @@ export default function ClientsUsersClient({ session }) {
     const profitBg = isProfit ? "#e8f5e9" : "#fdecea";
     const profitColor = isProfit ? "#1b5e20" : "#b71c1c";
     const profitBorder = isProfit ? "#a5d6a7" : "#ef9a9a";
-    const profitLabel = isProfit ? "📈 กำไรสุทธิ" : "📉 ขาดทุนสุทธิ";
+    const profitLabel = isProfit ? L.profitLabel : L.lossLabel;
     const profitValColor = isProfit ? "green" : "#c0392b";
     const profitSign = isProfit ? "+" : "-";
-    const profitBannerLabel = isProfit ? "📈 กำไร" : "📉 ขาดทุน";
+    const profitBannerLabel = isProfit ? L.profitBanner : L.lossBanner;
     const netProfitFmt = fmt(netProfit);
     const tableRows = rows.map((r, idx) => {
       running += r.income - r.expense;
       const runColor = running >= 0 ? "green" : "#c0392b";
       const runSign = running >= 0 ? "+" : "-";
       const refColor = r.type === "income" ? "#1a4a9e" : "#8b1a1a";
-      const typeLabel = r.type === "income" ? "💰 รายรับ" : "💸 รายจ่าย";
-      const incCell = r.income > 0 ? "+" + sym + fmt(r.income) : "—";
-      const expCell = r.expense > 0 ? "-" + sym + fmt(r.expense) : "—";
+      const typeLabel = r.type === "income" ? L.incomeRow : L.expenseRow;
+      const incCell = r.income > 0 ? "+" + sym + fmt(r.income) : "\u2014";
+      const expCell = r.expense > 0 ? "-" + sym + fmt(r.expense) : "\u2014";
       return "<tr>" +
         "<td style='text-align:center;color:#888'>" + (idx + 1) + "</td>" +
-        "<td style='white-space:nowrap'>" + r.date.toLocaleDateString("th-TH") + "</td>" +
+        "<td style='white-space:nowrap'>" + r.date.toLocaleDateString(L.locale) + "</td>" +
         "<td><code style='font-size:11px;color:" + refColor + "'>" + r.ref + "</code></td>" +
-        "<td>" + r.desc + "<br/><span style='font-size:11px;color:#666'>" + typeLabel + " · " + r.detail + "</span></td>" +
+        "<td>" + r.desc + "<br/><span style='font-size:11px;color:#666'>" + typeLabel + " \u00b7 " + r.detail + "</span></td>" +
         "<td style='text-align:right;color:green;font-weight:700'>" + incCell + "</td>" +
         "<td style='text-align:right;color:#c0392b;font-weight:700'>" + expCell + "</td>" +
         "<td style='text-align:right;font-weight:800;color:" + runColor + "'>" + runSign + sym + fmt(running) + "</td>" +
@@ -452,12 +1272,12 @@ export default function ClientsUsersClient({ session }) {
     }).join("");
     const win = window.open("", "_blank");
     const html =
-      "<\!DOCTYPE html><html><head><meta charset='UTF-8'>" +
-      "<title>บัญชีรายรับ-รายจ่าย " + currency + "</title>" +
+      "<!DOCTYPE html><html><head><meta charset='UTF-8'>" +
+      "<title>" + L.title + " (" + currency + ")</title>" +
       "<style>" +
-      "body{font-family:'Sarabun',Arial,sans-serif;padding:24px;color:#111;font-size:13px}" +
+      "body{font-family:'Sarabun','Malgun Gothic',Arial,sans-serif;padding:24px;color:#111;font-size:13px}" +
       "h2{margin-bottom:4px}.sub{color:#555;margin-bottom:12px;font-size:12px}" +
-      ".summary{display:flex;gap:24px;margin-bottom:20px}" +
+      ".summary{display:flex;gap:24px;margin-bottom:20px;flex-wrap:wrap}" +
       ".card{border:1px solid #ccc;border-radius:6px;padding:12px 20px;text-align:center;min-width:140px}" +
       ".card .label{font-size:11px;color:#888}.card .val{font-size:18px;font-weight:800}" +
       ".profit-banner{padding:10px 16px;border-radius:6px;font-weight:700;font-size:14px;margin-bottom:16px;" +
@@ -469,27 +1289,26 @@ export default function ClientsUsersClient({ session }) {
       "tfoot td{font-weight:800;background:#f0f0f0;border-top:2px solid #333}" +
       "@media print{button{display:none}}" +
       "</style></head><body>" +
-      "<h2>📒 บัญชีรายรับ-รายจ่าย (" + currency + ")</h2>" +
-      "<div class='sub'>พิมพ์เมื่อ: " + new Date().toLocaleString("th-TH") + "</div>" +
+      "<h2>\ud83d\udcd2 " + L.title + " (" + currency + ")</h2>" +
+      "<div class='sub'>" + L.printedAt + ": " + new Date().toLocaleString(L.locale) + "</div>" +
       "<div class='summary'>" +
-        "<div class='card'><div class='label'>💰 รายรับรวม</div><div class='val' style='color:green'>" + sym + fmt(totalIncome) + "</div><div class='label'>" + currency + "</div></div>" +
-        "<div class='card'><div class='label'>💸 รายจ่ายรวม</div><div class='val' style='color:#c0392b'>" + sym + fmt(totalExpense) + "</div><div class='label'>" + currency + "</div></div>" +
+        "<div class='card'><div class='label'>" + L.incomeTotal + "</div><div class='val' style='color:green'>" + sym + fmt(totalIncome) + "</div><div class='label'>" + currency + "</div></div>" +
+        "<div class='card'><div class='label'>" + L.expenseTotal + "</div><div class='val' style='color:#c0392b'>" + sym + fmt(totalExpense) + "</div><div class='label'>" + currency + "</div></div>" +
         "<div class='card'><div class='label'>" + profitLabel + "</div><div class='val' style='color:" + profitValColor + "'>" + profitSign + sym + netProfitFmt + "</div><div class='label'>" + currency + "</div></div>" +
       "</div>" +
-      "<div class='profit-banner'>" + profitBannerLabel + ": " + profitSign + sym + netProfitFmt + " " + currency + " &nbsp;|  รายรับ " + sym + fmt(totalIncome) + " − รายจ่าย " + sym + fmt(totalExpense) + "</div>" +
-      "<table><thead><tr><th>#</th><th>วันที่</th><th>เลขที่อ้างอิง</th><th>รายการ/รายละเอียด</th>" +
-      "<th style='text-align:right'>รายรับ</th><th style='text-align:right'>รายจ่าย</th><th style='text-align:right'>คงเหลือสะสม</th></tr></thead>" +
-      "<tbody>" + (tableRows || "<tr><td colspan='7' style='text-align:center;padding:24px;color:#888'>ไม่มีรายการ</td></tr>") + "</tbody>" +
-      "<tfoot><tr><td colspan='4'>รวมทั้งหมด (" + rows.length + " รายการ)</td>" +
+      "<div class='profit-banner'>" + profitBannerLabel + ": " + profitSign + sym + netProfitFmt + " " + currency + " &nbsp;|&nbsp; " + L.incomeTotal + " " + sym + fmt(totalIncome) + " &minus; " + L.expenseTotal + " " + sym + fmt(totalExpense) + "</div>" +
+      "<table><thead><tr><th>" + L.colNo + "</th><th>" + L.colDate + "</th><th>" + L.colRef + "</th><th>" + L.colDesc + "</th>" +
+      "<th style='text-align:right'>" + L.colIncome + "</th><th style='text-align:right'>" + L.colExpense + "</th><th style='text-align:right'>" + L.colBalance + "</th></tr></thead>" +
+      "<tbody>" + (tableRows || "<tr><td colspan='7' style='text-align:center;padding:24px;color:#888'>" + L.noData + "</td></tr>") + "</tbody>" +
+      "<tfoot><tr><td colspan='4'>" + L.footerTotal + " (" + rows.length + " " + L.footerItems + ")</td>" +
       "<td style='text-align:right;color:green'>+" + sym + fmt(totalIncome) + "</td>" +
       "<td style='text-align:right;color:#c0392b'>-" + sym + fmt(totalExpense) + "</td>" +
       "<td style='text-align:right;color:" + profitValColor + "'>" + profitSign + sym + netProfitFmt + "</td></tr></tfoot></table>" +
-      "<br/><button onclick='window.print()' style='padding:8px 20px;font-size:14px;cursor:pointer'>🖨️ พิมพ์</button>" +
+      "<br/><button onclick='window.print()' style='padding:8px 20px;font-size:14px;cursor:pointer'>" + L.printBtn + "</button>" +
       "</body></html>";
     win.document.write(html);
     win.document.close();
   };
-
   const filteredClients = clients.filter(c =>
     (c.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
      c.slug.toLowerCase().includes(clientSearch.toLowerCase())) &&
@@ -504,12 +1323,16 @@ export default function ClientsUsersClient({ session }) {
     (!filterInvoiceClientId || i.clientId === filterInvoiceClientId) &&
     (!filterInvoiceStatus || i.status === filterInvoiceStatus)
   );
+  const filteredReceipts = receipts.filter(r =>
+    (!filterReceiptClientId || r.clientId === filterReceiptClientId)
+  );
 
   const S = {
-    bg: { background: "#0f1117", minHeight: "100vh", color: "#e8eaf0" },
+    bg: { background: "#0f1117", minHeight: "100dvh", color: "#e8eaf0" },
     nav: { background: "#16181f", borderBottom: "1px solid #2a2d3a", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" },
     card: { background: "#16181f", border: "1px solid #2a2d3a", borderRadius: 10, padding: 20 },
     input: { background: "#1e2130", border: "1px solid #2a2d3a", color: "#e8eaf0", borderRadius: 6, padding: "8px 12px", width: "100%", fontSize: 14, outline: "none" },
+    inputNum: { background: "#1e2130", border: "1px solid #2a2d3a", color: "#e8eaf0", borderRadius: 6, padding: "8px 12px", width: "100%", fontSize: 14, outline: "none", textAlign: "right", fontVariantNumeric: "tabular-nums" },
     label: { fontSize: 12, color: "#8b8fa8", marginBottom: 4, display: "block" },
     btn: (bg, color = "#fff") => ({ background: bg, color, border: "none", borderRadius: 6, padding: "7px 16px", fontWeight: 600, fontSize: 13, cursor: "pointer" }),
     th: { padding: "10px 14px", fontSize: 12, color: "#8b8fa8", fontWeight: 600, textAlign: "left", borderBottom: "1px solid #2a2d3a", whiteSpace: "nowrap" },
@@ -573,7 +1396,7 @@ export default function ClientsUsersClient({ session }) {
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20, alignItems: "center", flexWrap: "wrap" }}>
-          {[["clients", "🏢 ลูกค้า"], ["users", "👤 Users"], ["invoices", "💳 การชำระเงิน"], ["expenses", "📝 ค่าใช้จ่าย"]].map(([key, label]) => (
+          {[["clients", "🏢 ลูกค้า"], ["users", "👤 Users"], ["invoices", "💳 การชำระเงิน"], ["receipts", "🧾 ใบเสร็จรับเงิน"], ["expenses", "📝 ค่าใช้จ่าย"]].map(([key, label]) => (
             <button key={key} onClick={() => setTab(key)} style={{
               ...S.btn(tab === key ? "#1e3a5f" : "#1e2130", tab === key ? "#7eb8f7" : "#8b8fa8"),
               border: tab === key ? "1px solid #3b82f6" : "1px solid #2a2d3a",
@@ -587,6 +1410,10 @@ export default function ClientsUsersClient({ session }) {
           <button style={{ ...S.btn("#0f2318", "#4ade80"), border: "1px solid #166534", padding: "9px 20px", fontSize: 14 }}
             onClick={() => { setLedgerCurrency("THB"); setLedgerModal(true); }}>
             📒 บัญชี ไทย-เกาหลี
+          </button>
+          <button style={{ ...S.btn("#1e3d2f", "#5ecb8a"), border: "1px solid #15803d", padding: "9px 20px", fontSize: 14 }}
+            onClick={openAddReceipt}>
+            🧾 บริการออกใบเสร็จของผู้ใช้บริการเรา
           </button>
         </div>
 
@@ -611,7 +1438,10 @@ export default function ClientsUsersClient({ session }) {
                   <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => { setFilterClientStatus(""); setClientSearch(""); }}>× ล้าง filter</button>
                 )}
               </div>
-              <button style={S.btn("#1e3a5f", "#7eb8f7")} onClick={openAddClient}>+ เพิ่มลูกค้าใหม่</button>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button style={S.btn("#1e3a5f", "#7eb8f7")} onClick={openAddClient}>+ เพิ่มลูกค้าใหม่</button>
+                <button style={S.btn("#0f2b3d", "#67e8f9")} onClick={openClientEditPicker}>🛠️ แก้ไขข้อมูลลูกค้า</button>
+              </div>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -831,6 +1661,138 @@ export default function ClientsUsersClient({ session }) {
                       </tr>
                     );
                   })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── RECEIPTS TAB ── */}
+        {tab === "receipts" && (
+          <div style={S.card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <select
+                  style={{ ...S.input, maxWidth: 220 }}
+                  value={filterReceiptClientId}
+                  onChange={e => setFilterReceiptClientId(e.target.value)}
+                >
+                  <option value="">ทุกบริษัท</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                {filterReceiptClientId && (
+                  <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setFilterReceiptClientId("")}>× ล้าง filter</button>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button style={S.btn("#1e3d2f", "#5ecb8a")} onClick={openAddReceipt}>+ สร้างใบเสร็จรับเงิน</button>
+              </div>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["เลขที่ใบเสร็จ", "ผู้ออกบิล", "ลูกค้า", "จำนวนรายการ", "รวม", "วันที่ออก", "หมายเหตุ", ""].map((h, i) => (
+                      <th key={h || `h${i}`} style={{ ...S.th, whiteSpace: "nowrap", ...(i === 3 || i === 4 || i === 5 ? { textAlign: "right" } : {}), ...(i === 7 ? { width: 96 } : {}) }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: "#8b8fa8", padding: 40 }}>กำลังโหลด...</td></tr>
+                  ) : filteredReceipts.length === 0 ? (
+                    <tr><td colSpan={8} style={{ ...S.td, textAlign: "center", color: "#8b8fa8", padding: 40 }}>ยังไม่มีใบเสร็จ</td></tr>
+                  ) : filteredReceipts.map(receipt => (
+                    <tr key={receipt.id}>
+                      <td style={{ ...S.td, whiteSpace: "nowrap" }}><code style={{ color: "#5ecb8a", fontSize: 12 }}>{receipt.number}</code></td>
+                      <td style={{ ...S.td, fontWeight: 600, whiteSpace: "nowrap" }}>{receipt.client?.name || "—"}</td>
+                      <td style={{ ...S.td, fontWeight: 600 }}>{receipt.customerName || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                      <td style={{ ...S.td, fontSize: 12, color: "#8b8fa8", textAlign: "right", whiteSpace: "nowrap" }}>{receipt.items?.length || 0} รายการ</td>
+                      <td style={{ ...S.td, textAlign: "right", whiteSpace: "nowrap" }}>
+                        <span style={{ fontWeight: 700, color: "#4ade80" }}>{Number(receipt.total).toLocaleString("th-TH")}</span>
+                        <span style={{ marginLeft: 4, fontSize: 11, color: "#8b8fa8" }}>{receipt.currency || "THB"}</span>
+                      </td>
+                      <td style={{ ...S.td, fontSize: 12, whiteSpace: "nowrap" }}>{new Date(receipt.issuedAt).toLocaleDateString("th-TH")}</td>
+                      <td style={{ ...S.td, fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{receipt.notes || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                      <td style={{ ...S.td, whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button style={S.btn("#1a2d3d", "#7eb8f7")} title="แก้ไข" onClick={() => openEditReceipt(receipt)}>✏️</button>
+                          <button style={S.btn("#0f3a2b", "#5ecb8a")} title="พิมพ์" onClick={() => printReceipt(receipt)}>🖨️</button>
+                          <button style={S.btn("#2a1f1f", "#f87171")} title="ลบ" onClick={() => deleteReceipt(receipt.id, receipt.number)}>🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── CUSTOMERS TAB ── */}
+        {tab === "customers" && (
+          <div style={S.card}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <select
+                  style={{ ...S.input, maxWidth: 220 }}
+                  value={filterCustomerClientId}
+                  onChange={e => { setFilterCustomerClientId(e.target.value); }}
+                >
+                  <option value="">ทุกบริษัท</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <input
+                  style={{ ...S.input, maxWidth: 200 }}
+                  placeholder="ค้นหาชื่อ..."
+                  value={customerSearch}
+                  onChange={e => setCustomerSearch(e.target.value)}
+                />
+                <span style={{ fontSize: 12, color: "#8b8fa8" }}>
+                  {customers.filter(c =>
+                    (!filterCustomerClientId || c.clientId === filterCustomerClientId) &&
+                    (!customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+                  ).length} รายการ
+                </span>
+              </div>
+              <button style={S.btn("#1e3d2f", "#5ecb8a")} onClick={openAddCustomer}>+ เพิ่มลูกค้า</button>
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    {["บริษัท", "ชื่อลูกค้า", "เบอร์โทร", "อีเมล", "บัตรประชาชน", "หมายเหตุ", ""].map((h, i) => (
+                      <th key={h || `ch${i}`} style={{ ...S.th, ...(i === 6 ? { width: 80 } : {}) }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan={7} style={{ ...S.td, textAlign: "center", color: "#8b8fa8", padding: 40 }}>กำลังโหลด...</td></tr>
+                  ) : customers.filter(c =>
+                    (!filterCustomerClientId || c.clientId === filterCustomerClientId) &&
+                    (!customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+                  ).length === 0 ? (
+                    <tr><td colSpan={7} style={{ ...S.td, textAlign: "center", color: "#8b8fa8", padding: 40 }}>ยังไม่มีข้อมูลลูกค้า</td></tr>
+                  ) : customers.filter(c =>
+                    (!filterCustomerClientId || c.clientId === filterCustomerClientId) &&
+                    (!customerSearch || c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+                  ).map(c => (
+                    <tr key={c.id}>
+                      <td style={{ ...S.td, fontSize: 12, color: "#8b8fa8", whiteSpace: "nowrap" }}>{c.client?.name || "—"}</td>
+                      <td style={{ ...S.td, fontWeight: 600 }}>{c.name}</td>
+                      <td style={{ ...S.td, fontSize: 12 }}>{c.phone || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                      <td style={{ ...S.td, fontSize: 12 }}>{c.email || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                      <td style={{ ...S.td, fontSize: 12 }}>{c.idCard || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                      <td style={{ ...S.td, fontSize: 12, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.notes || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                      <td style={{ ...S.td, whiteSpace: "nowrap" }}>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <button style={S.btn("#1a2d3d", "#7eb8f7")} title="แก้ไข" onClick={() => openEditCustomer(c)}>✏️</button>
+                          <button style={S.btn("#2a1f1f", "#f87171")} title="ลบ" onClick={() => deleteCustomer(c.id, c.name)}>🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -1129,6 +2091,58 @@ export default function ClientsUsersClient({ session }) {
         </div>
       )}
 
+      {/* ── CUSTOMER MODAL ── */}
+      {customerModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#16181f", borderRadius: 12, padding: 28, width: "100%", maxWidth: 480, border: "1px solid #2a2d3a", maxHeight: "90vh", overflowY: "auto" }}>
+            <h5 style={{ margin: "0 0 20px", color: "#7eb8f7" }}>{editCustomerId ? "✏️ แก้ไขข้อมูลลูกค้า" : "👥 เพิ่มลูกค้าใหม่"}</h5>
+            <div style={{ display: "grid", gap: 14 }}>
+              {!editCustomerId && (
+                <div>
+                  <label style={S.label}>บริษัท *</label>
+                  <select style={S.input} value={customerForm.clientId} onChange={e => setCustomerForm(p => ({ ...p, clientId: e.target.value }))}>
+                    <option value="">— เลือกบริษัท —</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label style={S.label}>ชื่อลูกค้า *</label>
+                <input style={S.input} value={customerForm.name} onChange={e => setCustomerForm(p => ({ ...p, name: e.target.value }))} placeholder="ชื่อ-นามสกุล หรือชื่อบริษัท" />
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={S.label}>เบอร์โทร</label>
+                  <input style={S.input} value={customerForm.phone} onChange={e => setCustomerForm(p => ({ ...p, phone: e.target.value }))} placeholder="08x-xxx-xxxx" />
+                </div>
+                <div>
+                  <label style={S.label}>อีเมล</label>
+                  <input style={S.input} type="email" value={customerForm.email} onChange={e => setCustomerForm(p => ({ ...p, email: e.target.value }))} placeholder="example@email.com" />
+                </div>
+              </div>
+              <div>
+                <label style={S.label}>เลขบัตรประชาชน / Passport</label>
+                <input style={S.input} value={customerForm.idCard} onChange={e => setCustomerForm(p => ({ ...p, idCard: e.target.value }))} placeholder="x-xxxx-xxxxx-xx-x" />
+              </div>
+              <div>
+                <label style={S.label}>ที่อยู่</label>
+                <textarea style={{ ...S.input, height: 72, resize: "vertical" }} value={customerForm.address} onChange={e => setCustomerForm(p => ({ ...p, address: e.target.value }))} placeholder="ที่อยู่" />
+              </div>
+              <div>
+                <label style={S.label}>หมายเหตุ</label>
+                <textarea style={{ ...S.input, height: 56, resize: "vertical" }} value={customerForm.notes} onChange={e => setCustomerForm(p => ({ ...p, notes: e.target.value }))} placeholder="บันทึกเพิ่มเติม" />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setCustomerModal(false)}>ยกเลิก</button>
+              <button style={S.btn("#15304d", "#7eb8f7")} onClick={saveCustomer} disabled={savingCustomer}>
+                {savingCustomer ? "กำลังบันทึก..." : editCustomerId ? "บันทึกการแก้ไข" : "เพิ่มลูกค้า"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── EXPENSE MODAL ── */}
       {expenseModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -1245,6 +2259,30 @@ export default function ClientsUsersClient({ session }) {
       )}
 
       {/* ── CLIENT MODAL ── */}
+      {clientPickerModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#16181f", borderRadius: 12, padding: 28, width: "100%", maxWidth: 460, border: "1px solid #2a2d3a" }}>
+            <h5 style={{ margin: "0 0 20px", color: "#67e8f9" }}>🛠️ แก้ไขข้อมูลลูกค้า</h5>
+            <div style={{ display: "grid", gap: 14 }}>
+              <div>
+                <label style={S.label}>เลือกลูกค้าที่ต้องการแก้ไข</label>
+                <select style={S.input} value={selectedClientEditId} onChange={e => setSelectedClientEditId(e.target.value)}>
+                  <option value="">— เลือกลูกค้า —</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div style={{ background: "#1a1d27", borderRadius: 8, padding: "12px 14px", border: "1px solid #2a2d3a", fontSize: 13, color: "#8b8fa8" }}>
+                ใช้สำหรับแก้ไขข้อมูลลูกค้าในฐานข้อมูล เช่น ที่อยู่ เบอร์โทร อีเมล และโลโก้สำหรับหัวบิล
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setClientPickerModal(false)}>ยกเลิก</button>
+              <button style={S.btn("#0f2b3d", "#67e8f9")} onClick={startEditClientFromPicker}>เปิดฟอร์มแก้ไข</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {clientModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "#16181f", borderRadius: 12, padding: 28, width: "100%", maxWidth: 520, border: "1px solid #2a2d3a", maxHeight: "90vh", overflowY: "auto" }}>
@@ -1254,6 +2292,11 @@ export default function ClientsUsersClient({ session }) {
                 <label style={S.label}>ชื่อบริษัท *</label>
                 <input style={S.input} value={clientForm.name}
                   onChange={e => setClientForm(p => ({ ...p, name: e.target.value, slug: editClientId ? p.slug : slugify(e.target.value) }))} />
+              </div>
+              <div>
+                <label style={S.label}>ชื่อภาษาไทย (สำหรับหัวบิล)</label>
+                <input style={S.input} placeholder="เช่น เอ็มรีสอร์ท" value={clientForm.nameTh}
+                  onChange={e => setClientForm(p => ({ ...p, nameTh: e.target.value }))} />
               </div>
               <div>
                 <label style={S.label}>Slug (URL) *</label>
@@ -1284,9 +2327,48 @@ export default function ClientsUsersClient({ session }) {
                 </div>
               </div>
               <div>
+                <label style={S.label}>ที่อยู่สำหรับหัวบิล</label>
+                <textarea style={{ ...S.input, height: 80, resize: "vertical" }} value={clientForm.address}
+                  onChange={e => setClientForm(p => ({ ...p, address: e.target.value }))} />
+              </div>
+              <div>
                 <label style={S.label}>URL ระบบลูกค้า</label>
                 <input style={S.input} placeholder="https://..." value={clientForm.systemUrl}
                   onChange={e => setClientForm(p => ({ ...p, systemUrl: e.target.value }))} />
+              </div>
+              <div>
+                <label style={S.label}>โลโก้สำหรับหัวบิล (อัปโหลดไฟล์)</label>
+                <input
+                  style={{ ...S.input, padding: "8px 10px" }}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,.gif"
+                  onChange={uploadClientLogo}
+                  disabled={uploadingClientLogo}
+                />
+                <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 12, color: "#8b8fa8" }}>
+                    {uploadingClientLogo ? "กำลังอัปโหลดโลโก้..." : "รองรับ JPG, PNG, WEBP, GIF"}
+                  </span>
+                  {clientForm.logoUrl && (
+                    <button
+                      type="button"
+                      style={S.btn("#2a1f1f", "#f87171")}
+                      onClick={() => setClientForm(p => ({ ...p, logoUrl: "" }))}
+                      disabled={uploadingClientLogo}
+                    >
+                      ลบโลโก้
+                    </button>
+                  )}
+                </div>
+                {clientForm.logoUrl && (
+                  <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 12 }}>
+                    <img src={clientForm.logoUrl} alt={clientForm.name || "logo"} style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 10, border: "1px solid #2a2d3a" }} />
+                    <div style={{ display: "grid", gap: 4 }}>
+                      <span style={{ fontSize: 12, color: "#8b8fa8" }}>ตัวอย่างโลโก้บนหัวบิล</span>
+                      <code style={{ fontSize: 11, color: "#67e8f9" }}>{clientForm.logoUrl}</code>
+                    </div>
+                  </div>
+                )}
               </div>
               {/* Services */}
               <div>
@@ -1321,8 +2403,8 @@ export default function ClientsUsersClient({ session }) {
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
               <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setClientModal(false)}>ยกเลิก</button>
-              <button style={S.btn("#1e3a5f", "#7eb8f7")} onClick={saveClient} disabled={savingClient}>
-                {savingClient ? "กำลังบันทึก..." : "บันทึก"}
+              <button style={S.btn("#1e3a5f", "#7eb8f7")} onClick={saveClient} disabled={savingClient || uploadingClientLogo}>
+                {savingClient ? "กำลังบันทึก..." : uploadingClientLogo ? "กำลังอัปโหลดโลโก้..." : "บันทึก"}
               </button>
             </div>
           </div>
@@ -1387,98 +2469,258 @@ export default function ClientsUsersClient({ session }) {
         </div>
       )}
 
+      {/* ── RECEIPT MODAL ── */}
+      {receiptModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#16181f", borderRadius: 12, padding: 28, width: "100%", maxWidth: 760, border: "1px solid #2a2d3a", maxHeight: "90vh", overflowY: "auto" }}>
+            <h5 style={{ margin: "0 0 20px", color: "#5ecb8a" }}>{editReceiptId ? "✏️ แก้ไขใบเสร็จรับเงิน" : "🧾 สร้างใบเสร็จรับเงิน"}</h5>
+            {(() => {
+              const issuer = clients.find(c => c.id === receiptForm.clientId);
+              return (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 12 }}>
+                <div>
+                  <label style={S.label}>ผู้ออกบิล *</label>
+                  {editReceiptId ? (
+                    <input style={{ ...S.input, color: "#8b8fa8" }} value={clients.find(c => c.id === receiptForm.clientId)?.name || receiptForm.clientId} readOnly />
+                  ) : (
+                    <select style={S.input} value={receiptForm.clientId} onChange={e => setReceiptForm(p => ({ ...p, clientId: e.target.value }))}>
+                      <option value="">— เลือกผู้ออกบิล —</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  )}
+                </div>
+                <div>
+                  <label style={S.label}>สกุลเงิน</label>
+                  <select style={S.input} value={receiptForm.currency} onChange={e => setReceiptForm(p => ({ ...p, currency: e.target.value }))}>
+                    <option value="THB">THB — บาทไทย</option>
+                    <option value="KRW">KRW — วอนเกาหลี ₩</option>
+                    <option value="USD">USD — ดอลลาร์สหรัฐ $</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={S.label}>วันที่ออกใบเสร็จ</label>
+                  <input style={S.input} type="date" value={receiptForm.issuedAt} onChange={e => setReceiptForm(p => ({ ...p, issuedAt: e.target.value }))} />
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                <div style={{ background: "#1a1d27", borderRadius: 10, border: "1px solid #2a2d3a", padding: 16 }}>
+                  <div style={{ fontSize: 12, color: "#8b8fa8", marginBottom: 8 }}>หัวบิล / ผู้ออกบิล</div>
+                  {issuer ? (
+                    <div style={{ display: "grid", gap: 6 }}>
+                      {issuer.logoUrl && (
+                        <img src={issuer.logoUrl} alt={issuer.name} style={{ width: 72, height: 72, objectFit: "cover", borderRadius: 12, border: "1px solid #2a2d3a" }} />
+                      )}
+                      <div style={{ fontSize: 18, fontWeight: 700, color: "#e8eaf0" }}>{issuer.name}</div>
+                      {issuer.address && <div style={{ color: "#8b8fa8", fontSize: 13, whiteSpace: "pre-wrap" }}>{issuer.address}</div>}
+                      {issuer.contactPhone && <div style={{ color: "#8b8fa8", fontSize: 13 }}>โทร: {issuer.contactPhone}</div>}
+                      {issuer.contactEmail && <div style={{ color: "#8b8fa8", fontSize: 13 }}>อีเมล: {issuer.contactEmail}</div>}
+                    </div>
+                  ) : (
+                    <div style={{ color: "#4a5070", fontSize: 13 }}>เลือกผู้ออกบิลเพื่อพรีวิวหัวบิล</div>
+                  )}
+                </div>
+                <div style={{ background: "#1a1d27", borderRadius: 10, border: "1px solid #2a2d3a", padding: 16, display: "grid", gap: 12 }}>
+                  <div style={{ fontSize: 12, color: "#8b8fa8" }}>ข้อมูลลูกค้า / ผู้รับบิล</div>
+                  {customers.filter(c => !receiptForm.clientId || c.clientId === receiptForm.clientId).length > 0 && (
+                    <div>
+                      <label style={S.label}>เลือกจากรายชื่อลูกค้า</label>
+                      <select
+                        style={{ ...S.input, color: "#7eb8f7" }}
+                        value=""
+                        onChange={e => {
+                          const cust = customers.find(c => c.id === e.target.value);
+                          if (cust) setReceiptForm(p => ({ ...p, customerName: cust.name, customerPhone: cust.phone || "", customerEmail: cust.email || "", customerAddress: cust.address || "" }));
+                        }}
+                      >
+                        <option value="">— เลือกเพื่อ autofill —</option>
+                        {customers.filter(c => !receiptForm.clientId || c.clientId === receiptForm.clientId).map(c => (
+                          <option key={c.id} value={c.id}>{c.name}{c.phone ? ` — ${c.phone}` : ""}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div>
+                    <label style={S.label}>ชื่อลูกค้า *</label>
+                    <input style={S.input} value={receiptForm.customerName} onChange={e => setReceiptForm(p => ({ ...p, customerName: e.target.value }))} placeholder="เช่น บริษัท เอ บี ซี จำกัด" />
+                  </div>
+                  <div>
+                    <label style={S.label}>ที่อยู่ลูกค้า</label>
+                    <textarea style={{ ...S.input, height: 80, resize: "vertical" }} value={receiptForm.customerAddress} onChange={e => setReceiptForm(p => ({ ...p, customerAddress: e.target.value }))} placeholder="ที่อยู่สำหรับออกบิล" />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <label style={S.label}>เบอร์โทรลูกค้า</label>
+                      <input style={S.input} value={receiptForm.customerPhone} onChange={e => setReceiptForm(p => ({ ...p, customerPhone: e.target.value }))} placeholder="08x-xxx-xxxx" />
+                    </div>
+                    <div>
+                      <label style={S.label}>อีเมลลูกค้า</label>
+                      <input style={S.input} type="email" value={receiptForm.customerEmail} onChange={e => setReceiptForm(p => ({ ...p, customerEmail: e.target.value }))} placeholder="customer@example.com" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ background: "#1a1d27", borderRadius: 10, border: "1px solid #2a2d3a", overflowX: "auto" }}>
+                <div style={{ display: "grid", gridTemplateColumns: RECEIPT_ITEM_GRID, background: "#11131a", borderBottom: "1px solid #2a2d3a", padding: 12, minWidth: RECEIPT_ITEM_MIN_WIDTH }}>
+                  {["รายการ", "จำนวน", "ราคาต่อหน่วย", "ส่วนลด %", "ส่วนลดตัวเลข", "รวมสุทธิ", ""].map((h, idx) => (
+                    <div
+                      key={h || `blank-${idx}`}
+                      style={{
+                        padding: RECEIPT_ITEM_CELL_PAD,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "#8b8fa8",
+                        textAlign: idx === 0 ? "left" : idx === 6 ? "center" : "right",
+                      }}
+                    >
+                      {h}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gap: 10, padding: 12 }}>
+                  {receiptForm.items.map((item, index) => {
+                    const line = calcReceiptItem(item);
+                    const lineSummary = [];
+                    if (line.discountPercent > 0) lineSummary.push(`${line.discountPercent.toLocaleString("th-TH")}%`);
+                    if (line.discountAmount > 0) lineSummary.push(line.discountAmount.toLocaleString("th-TH"));
+                    return (
+                      <div key={index} style={{ display: "grid", gridTemplateColumns: RECEIPT_ITEM_GRID, alignItems: "stretch", minWidth: RECEIPT_ITEM_MIN_WIDTH }}>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <input
+                            style={S.input}
+                            placeholder="เช่น ค่าบริการดูแลระบบเดือน เม.ย. 2569"
+                            value={item.description}
+                            onChange={e => updateReceiptItemRow(index, "description", e.target.value)}
+                          />
+                        </div>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <input
+                            style={S.inputNum}
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            value={item.quantity}
+                            onChange={e => updateReceiptItemRow(index, "quantity", e.target.value)}
+                          />
+                        </div>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <input
+                            style={S.inputNum}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.unitPrice}
+                            onChange={e => updateReceiptItemRow(index, "unitPrice", e.target.value)}
+                          />
+                        </div>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <input
+                            style={S.inputNum}
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            placeholder="0"
+                            value={item.discountPercent}
+                            onChange={e => updateReceiptItemRow(index, "discountPercent", e.target.value)}
+                          />
+                        </div>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <input
+                            style={S.inputNum}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0.00"
+                            value={item.discountAmount}
+                            onChange={e => updateReceiptItemRow(index, "discountAmount", e.target.value)}
+                          />
+                        </div>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <div style={{ ...S.inputNum, display: "flex", alignItems: "center", justifyContent: "flex-end", color: "#5ecb8a", fontWeight: 700 }}>
+                            <div style={{ width: "100%" }}>
+                              <div>{line.netTotal.toLocaleString("th-TH")}</div>
+                              {(line.discountPercent > 0 || line.discountAmount > 0) && (
+                                <div style={{ fontSize: 11, color: "#8b8fa8", fontWeight: 500, textAlign: "right" }}>
+                                  ลด {lineSummary.join(" + ")} จาก {line.subtotal.toLocaleString("th-TH")}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{ padding: RECEIPT_ITEM_CELL_PAD }}>
+                          <button type="button" style={{ ...S.btn("#2a1f1f", "#f87171"), padding: 0, width: 46, minWidth: 46, display: "grid", placeItems: "center", marginLeft: "auto" }} onClick={() => removeReceiptItemRow(index)}>✕</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                <button type="button" style={S.btn("#15304d", "#7eb8f7")} onClick={addReceiptItemRow}>+ เพิ่มรายการ</button>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 12, color: "#8b8fa8" }}>
+                    ก่อนลด {receiptForm.items.reduce((sum, item) => sum + calcReceiptItem(item).subtotal, 0).toLocaleString("th-TH")} ·
+                    ส่วนลด {receiptForm.items.reduce((sum, item) => sum + calcReceiptItem(item).totalDiscount, 0).toLocaleString("th-TH")}
+                  </div>
+                  <div style={{ fontSize: 12, color: "#8b8fa8" }}>รวมทั้งสิ้น</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: "#5ecb8a" }}>
+                    {receiptForm.items.reduce((sum, item) => sum + calcReceiptItem(item).netTotal, 0).toLocaleString("th-TH")} {receiptForm.currency}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label style={S.label}>หมายเหตุ</label>
+                <textarea
+                  style={{ ...S.input, height: 80, resize: "vertical" }}
+                  placeholder="รายละเอียดเพิ่มเติมสำหรับใบเสร็จ"
+                  value={receiptForm.notes}
+                  onChange={e => setReceiptForm(p => ({ ...p, notes: e.target.value }))}
+                />
+              </div>
+
+              <div style={{ fontSize: 12, color: "#8b8fa8" }}>
+                {editReceiptId ? "แก้ไขข้อมูลใบเสร็จ — เลขที่ใบเสร็จจะไม่เปลี่ยนแปลง" : "ระบบจะสร้างเลขที่ใบเสร็จให้อัตโนมัติเมื่อบันทึก"}
+              </div>
+            </div>
+              );
+            })()}
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setReceiptModal(false)}>ยกเลิก</button>
+              <button style={S.btn("#1e3d2f", "#5ecb8a")} onClick={saveReceipt} disabled={savingReceipt}>
+                {savingReceipt ? "กำลังบันทึก..." : editReceiptId ? "บันทึกการแก้ไข" : "ออกใบเสร็จ"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── INVOICE MODAL ── */}
       {invoiceModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.7)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
           <div style={{ background: "#16181f", borderRadius: 12, padding: 28, width: "100%", maxWidth: 480, border: "1px solid #2a2d3a", maxHeight: "90vh", overflowY: "auto" }}>
-            <h5 style={{ margin: "0 0 20px", color: isReceiptMode ? "#5ecb8a" : "#7eb8f7" }}>
-              {editInvoiceId ? "✏️ แก้ไข Invoice" : isReceiptMode ? "🧾 สร้างใบเสร็จรับเงิน" : "💳 สร้าง Invoice ใหม่"}
-            </h5>
+            <h5 style={{ margin: "0 0 20px", color: "#7eb8f7" }}>{editInvoiceId ? "✏️ แก้ไข Invoice" : "💳 สร้าง Invoice ใหม่"}</h5>
             <div style={{ display: "grid", gap: 14 }}>
-              {isReceiptMode ? (
-                // ── RECEIPT MODE: pick existing invoice ──
-                <>
-                  <div>
-                    <label style={S.label}>เลือก Invoice *</label>
-                    <select style={S.input} value={selectedInvId} onChange={e => {
-                      const id = e.target.value;
-                      setSelectedInvId(id);
-                      const inv = invoices.find(i => i.id === id);
-                      if (inv) {
-                        const due = inv.dueDate ? new Date(inv.dueDate).toISOString().slice(0, 10) : "";
-                        setInvoiceForm(p => ({
-                          ...p,
-                          clientId: inv.clientId,
-                          amount: String(inv.amount),
-                          currency: inv.currency,
-                          dueDate: due,
-                          notes: inv.notes || "",
-                          receiptNumber: inv.receiptNumber || "",
-                        }));
-                      } else {
-                        setInvoiceForm({ clientId: "", amount: "", currency: "THB", status: "PAID", dueDate: "", notes: "", receiptNumber: "" });
-                      }
-                    }}>
-                      <option value="">— เลือก Invoice —</option>
-                      {invoices.filter(i => !i.receiptNumber && i.status !== "PAID").map(i => (
-                        <option key={i.id} value={i.id}>{i.number} — {i.client?.name || i.clientId} ({Number(i.amount).toLocaleString()} บ.)</option>
-                      ))}
-                    </select>
-                    {invoices.filter(i => !i.receiptNumber && i.status !== "PAID").length === 0 && (
-                      <div style={{ fontSize: 12, color: "#8b8fa8", marginTop: 4 }}>ไม่มี Invoice ที่ยังไม่ได้ออกใบเสร็จ</div>
-                    )}
-                  </div>
-                  {selectedInvId && (() => {
-                    const inv = invoices.find(i => i.id === selectedInvId);
-                    const previewRcp = invoiceForm.receiptNumber || (inv ? `RCP-${inv.number}` : "");
-                    return (
-                      <>
-                        <div style={{ background: "#1a1d27", borderRadius: 8, padding: "12px 14px", border: "1px solid #2a2d3a", display: "grid", gap: 6 }}>
-                          <div style={{ fontSize: 12, color: "#8b8fa8" }}>รายละเอียด Invoice</div>
-                          <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
-                            <span style={{ color: "#c8cce0", fontWeight: 600 }}>{inv?.number}</span>
-                            <span style={{ color: "#c8cce0" }}>{clients.find(c => c.id === inv?.clientId)?.name}</span>
-                            <span style={{ color: "#5ecb8a", fontWeight: 600 }}>{Number(inv?.amount).toLocaleString()} {inv?.currency}</span>
-                          </div>
-                        </div>
-                        <div>
-                          <label style={S.label}>รหัสใบเสร็จ (Receipt No.)</label>
-                          <input style={{ ...S.input, color: invoiceForm.receiptNumber ? "#c8cce0" : "#5ecb8a" }}
-                            placeholder={`สร้างอัตโนมัติ: ${previewRcp}`}
-                            value={invoiceForm.receiptNumber}
-                            onChange={e => setInvoiceForm(p => ({ ...p, receiptNumber: e.target.value }))} />
-                          {!invoiceForm.receiptNumber && (
-                            <div style={{ fontSize: 11, color: "#5ecb8a", marginTop: 4 }}>✨ จะใช้ {previewRcp} อัตโนมัติ</div>
-                          )}
-                        </div>
-                        <div>
-                          <label style={S.label}>หมายเหตุ (เพิ่มเติม)</label>
-                          <textarea style={{ ...S.input, height: 64, resize: "vertical" }} value={invoiceForm.notes}
-                            onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))} />
-                        </div>
-                      </>
-                    );
-                  })()}
-                </>
-              ) : (
-                // ── NORMAL INVOICE / EDIT MODE ──
-                <>
-                  {!editInvoiceId && (
-                    <div>
-                      <label style={S.label}>บริษัท *</label>
-                      <select style={S.input} value={invoiceForm.clientId} onChange={e => setInvoiceForm(p => ({ ...p, clientId: e.target.value }))}>
-                        <option value="">— เลือกบริษัท —</option>
-                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-                  {editInvoiceId && (
-                    <div>
-                      <label style={S.label}>บริษัท</label>
-                      <input style={{ ...S.input, color: "#8b8fa8" }} value={clients.find(c => c.id === invoiceForm.clientId)?.name || invoiceForm.clientId} readOnly />
-                    </div>
-                  )}
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {!editInvoiceId && (
+                <div>
+                  <label style={S.label}>บริษัท *</label>
+                  <select style={S.input} value={invoiceForm.clientId} onChange={e => setInvoiceForm(p => ({ ...p, clientId: e.target.value }))}>
+                    <option value="">— เลือกบริษัท —</option>
+                    {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
+              {editInvoiceId && (
+                <div>
+                  <label style={S.label}>บริษัท</label>
+                  <input style={{ ...S.input, color: "#8b8fa8" }} value={clients.find(c => c.id === invoiceForm.clientId)?.name || invoiceForm.clientId} readOnly />
+                </div>
+              )}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                 <div>
                   <label style={S.label}>ยอดเงิน *</label>
                   <input style={S.input} type="number" min="0" step="0.01" value={invoiceForm.amount}
@@ -1507,25 +2749,16 @@ export default function ClientsUsersClient({ session }) {
                 <input style={S.input} type="date" value={invoiceForm.dueDate}
                   onChange={e => setInvoiceForm(p => ({ ...p, dueDate: e.target.value }))} />
               </div>
-              {(isReceiptMode || invoiceForm.receiptNumber) && !isReceiptMode && (
-                <div>
-                  <label style={S.label}>รหัสใบเสร็จ (Receipt No.)</label>
-                  <input style={S.input} placeholder="เช่น RCP-260420-001" value={invoiceForm.receiptNumber}
-                    onChange={e => setInvoiceForm(p => ({ ...p, receiptNumber: e.target.value }))} />
-                </div>
-              )}
               <div>
                 <label style={S.label}>หมายเหตุ</label>
                 <textarea style={{ ...S.input, height: 72, resize: "vertical" }} value={invoiceForm.notes}
                   onChange={e => setInvoiceForm(p => ({ ...p, notes: e.target.value }))} />
               </div>
-                </>
-              )}
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
               <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setInvoiceModal(false)}>ยกเลิก</button>
-              <button style={S.btn(isReceiptMode ? "#1e3d2f" : "#1e3a5f", isReceiptMode ? "#5ecb8a" : "#7eb8f7")} onClick={saveInvoice} disabled={savingInvoice}>
-                {savingInvoice ? "กำลังบันทึก..." : isReceiptMode ? "ออกใบเสร็จ" : "บันทึก"}
+              <button style={S.btn("#1e3a5f", "#7eb8f7")} onClick={saveInvoice} disabled={savingInvoice}>
+                {savingInvoice ? "กำลังบันทึก..." : "บันทึก"}
               </button>
             </div>
           </div>

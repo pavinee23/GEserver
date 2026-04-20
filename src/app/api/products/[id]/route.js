@@ -3,7 +3,8 @@ import prisma from "@/lib/prisma";
 import { NextResponse } from "next/server";
 
 export async function GET(req, { params }) {
-  const p = await prisma.product.findUnique({ where: { id: parseInt(params.id) } });
+  const { id } = await params;
+  const p = await prisma.product.findUnique({ where: { id: parseInt(id, 10) } });
   if (!p) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(p);
 }
@@ -14,7 +15,8 @@ export async function PUT(req, { params }) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const id = parseInt(params.id);
+  const { id: rawId } = await params;
+  const id = parseInt(rawId, 10);
   const body = await req.json();
 
   const data = {};
@@ -45,7 +47,8 @@ export async function DELETE(req, { params }) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const id = parseInt(params.id);
+  const { id: rawId } = await params;
+  const id = parseInt(rawId, 10);
   await prisma.product.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

@@ -71,11 +71,13 @@ model VerificationToken {
 model Client {
   id           String   @id @default(cuid())
   name         String
+  nameTh       String?
   slug         String   @unique
   description  String?  @db.Text
   status       Status   @default(COMING_SOON)
   contactEmail String?
   contactPhone String?
+  address      String?  @db.Text
   systemUrl          String?
   logoUrl            String?
   domainRegisteredAt DateTime?
@@ -85,6 +87,8 @@ model Client {
   users    User[]
   services ClientService[]
   invoices Invoice[]
+  receipts Receipt[]
+  customers Customer[]
 
   @@index([slug])
   @@index([status])
@@ -137,6 +141,69 @@ model Invoice {
 
   @@index([clientId])
   @@index([status])
+}
+
+model Receipt {
+  id        String   @id @default(cuid())
+  number    String   @unique
+  clientId  String
+  customerId      String?
+  customerName    String   @default("")
+  customerAddress String?  @db.Text
+  customerPhone   String?
+  customerEmail   String?
+  currency  String   @default("THB")
+  issuedAt  DateTime @default(now())
+  subtotal  Decimal  @db.Decimal(10, 2)
+  total     Decimal  @db.Decimal(10, 2)
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client   Client        @relation(fields: [clientId], references: [id])
+  customer Customer?     @relation(fields: [customerId], references: [id])
+  items    ReceiptItem[]
+
+  @@index([clientId])
+  @@index([customerId])
+  @@index([issuedAt])
+}
+
+model ReceiptItem {
+  id          String   @id @default(cuid())
+  receiptId   String
+  description String
+  quantity    Decimal  @default(1) @db.Decimal(10, 2)
+  unitPrice   Decimal  @db.Decimal(10, 2)
+  discountPercent Decimal @default(0) @db.Decimal(5, 2)
+  discountAmount  Decimal @default(0) @db.Decimal(10, 2)
+  amount      Decimal  @db.Decimal(10, 2)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  receipt Receipt @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+
+  @@index([receiptId])
+  @@index([sortOrder])
+}
+
+model Customer {
+  id        String   @id @default(cuid())
+  clientId  String
+  name      String
+  phone     String?
+  email     String?
+  address   String?  @db.Text
+  idCard    String?
+  notes     String?  @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  client   Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  receipts Receipt[]
+
+  @@index([clientId])
+  @@index([name])
 }
 
 model Notification {

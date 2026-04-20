@@ -43,17 +43,22 @@ export async function GET(req) {
   const session = await auth();
   if (!isSuperAdmin(session)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { searchParams } = new URL(req.url);
-  const clientId = searchParams.get("clientId");
+  try {
+    const { searchParams } = new URL(req.url);
+    const clientId = searchParams.get("clientId");
 
-  const invoices = await prisma.invoice.findMany({
-    where: clientId ? { clientId } : {},
-    orderBy: { createdAt: "desc" },
-    include: {
-      client: { select: { id: true, name: true } },
-    },
-  });
-  return NextResponse.json({ invoices });
+    const invoices = await prisma.invoice.findMany({
+      where: clientId ? { clientId } : {},
+      orderBy: { createdAt: "desc" },
+      include: {
+        client: { select: { id: true, name: true } },
+      },
+    });
+    return NextResponse.json({ invoices });
+  } catch (err) {
+    console.error("[GET /api/admin/invoices]", err);
+    return NextResponse.json({ error: err.message || "เกิดข้อผิดพลาดในเซิร์ฟเวอร์" }, { status: 500 });
+  }
 }
 
 // POST /api/admin/invoices — create invoice
