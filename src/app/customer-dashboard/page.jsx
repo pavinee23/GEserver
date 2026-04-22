@@ -24,10 +24,10 @@ function L(locale, th, ko, en) {
 function fmt(n) { return n.toLocaleString(); }
 
 const staffList = [
-  { name: 'Nattapong S.', nameKo: '나타퐁 S.', nameTh: 'ณัฐพงศ์ ส.', role: 'Sales Engineer', roleTh: 'วิศวกรขาย', roleKo: '영업 엔지니어', phone: '+66 81-234-5678', email: 'nattapong@kenergy-save.com', line: '@kenergy_nat', available: true },
-  { name: 'Sirikanya P.', nameKo: '시리칸야 P.', nameTh: 'ศิริกัญญา พ.', role: 'Customer Success', roleTh: 'ฝ่ายดูแลลูกค้า', roleKo: '고객 성공팀', phone: '+66 89-345-6789', email: 'sirikanya@kenergy-save.com', line: '@kenergy_siri', available: true },
-  { name: 'Wanchai T.', nameKo: '완차이 T.', nameTh: 'วันชัย ท.', role: 'Technical Support', roleTh: 'ฝ่ายเทคนิค', roleKo: '기술 지원팀', phone: '+66 92-456-7890', email: 'wanchai@kenergy-save.com', line: '@kenergy_tech', available: false },
-  { name: 'Minjun K.', nameKo: '민준 K.', nameTh: 'มินจุน เค.', role: 'Korea Sales Manager', roleTh: 'ผู้จัดการฝ่ายขาย เกาหลี', roleKo: '한국 영업 매니저', phone: '+82 10-1234-5678', email: 'minjun@kenergy-save.com', line: '@kenergy_kr', available: true },
+  { name: 'Nattapong S.', nameKo: '나타퐁 S.', nameTh: 'ณัฐพงศ์ ส.', role: 'Sales Engineer', roleTh: 'วิศวกรขาย', roleKo: '영업 엔지니어', phone: '+66 81-234-5678', email: 'nattapong@ge-serverhub.com', line: '@ge_nat', available: true },
+  { name: 'Sirikanya P.', nameKo: '시리칸야 P.', nameTh: 'ศิริกัญญา พ.', role: 'Customer Success', roleTh: 'ฝ่ายดูแลลูกค้า', roleKo: '고객 성공팀', phone: '+66 89-345-6789', email: 'sirikanya@ge-serverhub.com', line: '@ge_siri', available: true },
+  { name: 'Wanchai T.', nameKo: '완차이 T.', nameTh: 'วันชัย ท.', role: 'Technical Support', roleTh: 'ฝ่ายเทคนิค', roleKo: '기술 지원팀', phone: '+66 92-456-7890', email: 'wanchai@ge-serverhub.com', line: '@ge_tech', available: false },
+  { name: 'Minjun K.', nameKo: '민준 K.', nameTh: 'มินจุน เค.', role: 'Korea Sales Manager', roleTh: 'ผู้จัดการฝ่ายขาย เกาหลี', roleKo: '한국 영업 매니저', phone: '+82 10-1234-5678', email: 'minjun@ge-serverhub.com', line: '@ge_kr', available: true },
 ];
 
 export default function CustomersPage() {
@@ -246,10 +246,10 @@ export default function CustomersPage() {
             </div>
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="bg-white/20 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1 rounded-full ring-1 ring-white/30">⚡ K Energy Save</span>
+                <span className="bg-white/20 backdrop-blur-sm text-white text-xs font-semibold px-3 py-1 rounded-full ring-1 ring-white/30">⚡ Green Retail Group</span>
               </div>
               <h1 className="text-lg md:text-3xl font-bold text-white leading-tight">{L(locale,'รายงานเปรียบเทียบพลังงาน','에너지 비교 보고서','Energy Comparison Report')}</h1>
-              <p className="text-blue-100 text-xs md:text-sm mt-0.5 hidden sm:block">{L(locale,'เปรียบเทียบการใช้ไฟฟ้าและค่าใช้จ่ายก่อน-หลังติดตั้งเครื่อง K Energy Save','K Energy Save 설치 전후 전력 사용량 및 비용 비교','Electricity usage & cost comparison before/after K Energy Save installation')}</p>
+              <p className="text-blue-100 text-xs md:text-sm mt-0.5 hidden sm:block">{L(locale,'เปรียบเทียบการใช้ไฟฟ้าและค่าใช้จ่ายก่อน-หลัง','설치 전후 전력 사용량 및 비용 비교','Electricity usage & cost comparison before/after installation')}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 self-start sm:self-auto">
@@ -333,7 +333,7 @@ export default function CustomersPage() {
                     : L(locale,`ค่าใช้จ่ายรายเดือน (${currencyCode})`,`월별 전기 요금 (${currencyCode})`,`Monthly Cost (${currencyCode})`)}
                 </h2>
                 <p className="text-gray-500 text-xs md:text-sm mb-4 md:mb-6">
-                  {L(locale,'เปรียบเทียบก่อนและหลังติดตั้งเครื่อง K Energy Save','K Energy Save 설치 전후 비교','Before vs after K Energy Save installation')}
+                  {L(locale,'เปรียบเทียบก่อนและหลังติดตั้ง','설치 전후 비교','Before vs after installation')}
                 </p>
                 {monthlyLoading ? (
                   <div className="flex items-center justify-center h-[260px] text-gray-400">
@@ -663,7 +663,7 @@ export default function CustomersPage() {
             <div className="lg:col-span-2 space-y-4">
               <h2 className="font-bold text-gray-800 text-lg flex items-center gap-2">
                 <Users className="w-5 h-5 text-indigo-500" />
-                {L(locale,'ทีมงาน K Energy Save','K Energy Save 담당자','K Energy Save Team')}
+                {L(locale,'ทีมงาน','담당자','Our Team')}
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {staffList.map((s, i) => {

@@ -935,7 +935,7 @@ const translationData = {
     gettingStarted: '시작하기',
     quickStartGuide: '빠른 시작 가이드',
     importantTips: '중요 팁',
-    momoSpacePlatformUserGuide: 'K Energy Save 플랫폼 사용 가이드',
+    momoSpacePlatformUserGuide: '플랫폼 사용 가이드',
     documentationComingSoon: '문서 준비 중',
     menuGuide: '메뉴 가이드',
     sidebarMenu: '사이드바 메뉴',
@@ -1031,7 +1031,7 @@ const translationData = {
     viewer: '뷰어',
     dashboardInterface: '대시보드 인터페이스',
     keyFeatures: '주요 기능',
-    systemUsageGuideDescription: 'K Energy Save 대시보드를 효과적으로 사용하는 방법을 알아보세요.',
+    systemUsageGuideDescription: '대시보드를 효과적으로 사용하는 방법을 알아보세요.',
   },
   en: {
     // Header
@@ -1967,7 +1967,7 @@ const translationData = {
     gettingStarted: 'Getting Started',
     quickStartGuide: 'Quick Start Guide',
     importantTips: 'Important Tips',
-    momoSpacePlatformUserGuide: 'K Energy Save Platform User Guide',
+    momoSpacePlatformUserGuide: 'Platform User Guide',
     documentationComingSoon: 'Documentation Coming Soon',
     menuGuide: 'Menu Guide',
     sidebarMenu: 'Sidebar Menu',
@@ -2063,7 +2063,7 @@ const translationData = {
     viewer: 'Viewer',
     dashboardInterface: 'Dashboard Interface',
     keyFeatures: 'Key Features',
-    systemUsageGuideDescription: 'Learn how to use the K Energy Save dashboard effectively.',
+    systemUsageGuideDescription: 'Learn how to use the dashboard effectively.',
   },
   cn: {
     // Language names
@@ -2218,7 +2218,7 @@ const translationData = {
     gettingStarted: '入门指南',
     quickStartGuide: '快速入门指南',
     importantTips: '重要提示',
-    momoSpacePlatformUserGuide: 'K Energy Save 平台用户手册',
+    momoSpacePlatformUserGuide: '平台用户手册',
     documentationComingSoon: '文档即将推出',
     menuGuide: '菜单指南',
     sidebarMenu: '侧边栏菜单',
@@ -2307,7 +2307,7 @@ const translationData = {
     viewer: '查看器',
     dashboardInterface: '仪表板界面',
     keyFeatures: '主要功能',
-    systemUsageGuideDescription: '了解如何有效使用 K Energy Save 仪表板。',
+    systemUsageGuideDescription: '了解如何有效使用仪表板。',
 
     // Admin Pages
     backToLogin: '返回登录',
@@ -2485,7 +2485,7 @@ const translationData = {
     gettingStarted: 'Bắt Đầu',
     quickStartGuide: 'Hướng Dẫn Nhanh',
     importantTips: 'Mẹo Quan Trọng',
-    momoSpacePlatformUserGuide: 'Hướng Dẫn Người Dùng Nền Tảng K Energy Save',
+    momoSpacePlatformUserGuide: 'Hướng Dẫn Người Dùng Nền Tảng',
     documentationComingSoon: 'Tài Liệu Sắp Ra Mắt',
     menuGuide: 'Hướng Dẫn Menu',
     sidebarMenu: 'Menu Thanh Bên',
@@ -2574,7 +2574,7 @@ const translationData = {
     viewer: 'Trình Xem',
     dashboardInterface: 'Giao Diện Bảng Điều Khiển',
     keyFeatures: 'Tính Năng Chính',
-    systemUsageGuideDescription: 'Tìm hiểu cách sử dụng bảng điều khiển K Energy Save hiệu quả.',
+    systemUsageGuideDescription: 'Tìm hiểu cách sử dụng bảng điều khiển hiệu quả.',
 
     // Admin Pages
     backToLogin: 'Quay lại Đăng nhập',
@@ -2755,7 +2755,7 @@ const translationData = {
     gettingStarted: 'เริ่มต้นใช้งาน',
     quickStartGuide: 'คู่มือเริ่มต้น',
     importantTips: 'เคล็ดลับสำคัญ',
-    momoSpacePlatformUserGuide: 'คู่มือผู้ใช้แพลตฟอร์ม K Energy Save',
+    momoSpacePlatformUserGuide: 'คู่มือผู้ใช้แพลตฟอร์ม',
     documentationComingSoon: 'เอกสารกำลังจะมาเร็วๆ นี้',
     menuGuide: 'คู่มือเมนู',
     sidebarMenu: 'เมนูแถบด้านข้าง',
@@ -2844,7 +2844,7 @@ const translationData = {
     viewer: 'ผู้ดู',
     dashboardInterface: 'อินเทอร์เฟสแดชบอร์ด',
     keyFeatures: 'ฟีเจอร์หลัก',
-    systemUsageGuideDescription: 'เรียนรู้วิธีใช้แดชบอร์ด K Energy Save อย่างมีประสิทธิภาพ',
+    systemUsageGuideDescription: 'เรียนรู้วิธีใช้แดชบอร์ดอย่างมีประสิทธิภาพ',
 
     // Admin Pages
     backToLogin: 'กลับไปหน้าเข้าสู่ระบบ',
