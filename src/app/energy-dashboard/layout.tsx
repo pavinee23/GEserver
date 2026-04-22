@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { LocaleProvider } from '@/lib/LocaleContext';
 import { SiteProvider } from '@/lib/SiteContext';
+import ClientLayout from '@/components/energy/ClientLayout';
 
 export default function EnergyDashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -39,7 +40,9 @@ export default function EnergyDashboardLayout({ children }: { children: React.Re
   return (
     <SiteProvider>
       <LocaleProvider>
-        {children}
+        <ClientLayout>
+          {children}
+        </ClientLayout>
       </LocaleProvider>
     </SiteProvider>
   );

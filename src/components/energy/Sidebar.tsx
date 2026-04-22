@@ -7,16 +7,16 @@ import { usePathname } from "next/navigation";
 import { useLocale } from "@/lib/LocaleContext";
 
 const navigationItems = [
-  { key: "dashboard", icon: Home, href: "/dashboard" },
-  { key: "overview", icon: BarChart2, href: "/overview" },
-  { key: "monitor", icon: Monitor, href: "/monitor" },
-  { key: "location", icon: MapPin, href: "/location" },
+  { key: "dashboard", icon: Home, href: "/energy-dashboard/dashboard" },
+  { key: "overview", icon: BarChart2, href: "/energy-dashboard/overview" },
+  { key: "monitor", icon: Monitor, href: "/energy-dashboard/monitor" },
+  { key: "location", icon: MapPin, href: "/energy-dashboard/location" },
 ];
 
 const configurationItems = [
-  { key: "notifications", icon: Bell, href: "/notifications" },
-  { key: "devicesSetting", icon: Settings, href: "/devices-setting" },
-  { key: "meterSetting", icon: LayoutIcon, href: "/meter-seting" },
+  { key: "notifications", icon: Bell, href: "/energy-dashboard/notifications" },
+  { key: "devicesSetting", icon: Settings, href: "/energy-dashboard/devices-setting" },
+  { key: "meterSetting", icon: LayoutIcon, href: "/energy-dashboard/meter-seting" },
 ];
 
 const developerItems = [
@@ -182,7 +182,7 @@ export default function Sidebar() {
       {/* Back to Main */}
       <div className="p-4 border-t">
         <Link
-          href="/main-login"
+          href="/"
           className="group flex items-center gap-3 px-3 py-2.5 rounded-xl bg-red-50 text-red-500 hover:bg-red-500 hover:text-white transition-all duration-200 w-full shadow-sm hover:shadow-md hover:shadow-red-200"
         >
           <LogOut className="w-4.5 h-4.5 flex-shrink-0 transition-transform duration-200 group-hover:-translate-x-0.5" />

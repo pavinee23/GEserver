@@ -6,7 +6,7 @@ import Header from './Header';
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isAuthPage = pathname === '/login';
+  const isAuthPage = pathname === '/energy-dashboard-login' || pathname === '/login';
 
   if (isAuthPage) {
     return <>{children}</>;
