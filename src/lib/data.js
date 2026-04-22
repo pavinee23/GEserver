@@ -73,6 +73,16 @@ export const fallbackClients = [
     contact_phone: "02-555-1199",
     system_url: "/customer-dashboard-login",
   },
+  {
+    id: 4,
+    name: "Green Retail Group",
+    slug: "green-retail-energy",
+    description: "ระบบมอนิเตอริ่งพลังงานไฟฟ้า",
+    status: "online",
+    contact_email: "it@green-retail.example.com",
+    contact_phone: "02-555-1199",
+    system_url: "/customer-dashboard-login",
+  },
 ];
 
 export const filterOptions = [

@@ -157,6 +157,10 @@ export const translations = {
         name: "Green Retail Group",
         description: "ระบบมอนิเตอริ่ง ผู้ใช้ Demo",
       },
+      "green-retail-energy": {
+        name: "Green Retail Group",
+        description: "ระบบมอนิเตอริ่งพลังงานไฟฟ้า",
+      },
     },
   },
   en: {
@@ -320,6 +324,10 @@ export const translations = {
         name: "Green Retail Group",
         description: "ระบบมอนิเตอริ่ง ผู้ใช้ Demo",
       },
+      "green-retail-energy": {
+        name: "Green Retail Group",
+        description: "Electrical Energy Monitoring System",
+      },
     },
   },
   zh: {
@@ -472,6 +480,10 @@ export const translations = {
         name: "Green Retail Group",
         description: "ระบบมอนิเตอริ่ง ผู้ใช้ Demo",
       },
+      "green-retail-energy": {
+        name: "Green Retail Group",
+        description: "电力能源监控系统",
+      },
     },
   },
   ko: {
@@ -623,6 +635,10 @@ export const translations = {
       "green-retail-group": {
         name: "Green Retail Group",
         description: "ระบบมอนิเตอริ่ง ผู้ใช้ Demo",
+      },
+      "green-retail-energy": {
+        name: "Green Retail Group",
+        description: "전력 에너지 모니터링 시스템",
       },
     },
   },
