@@ -13,6 +13,21 @@
       "source": "/customer-dashboard",
       "destination": "https://strong-dory-enabled.ngrok-free.app/customer-dashboard",
       "permanent": false
+    },
+    {
+      "source": "/energy-dashboard-login",
+      "destination": "https://strong-dory-enabled.ngrok-free.app/energy-dashboard-login",
+      "permanent": false
+    },
+    {
+      "source": "/energy-dashboard",
+      "destination": "https://strong-dory-enabled.ngrok-free.app/energy-dashboard",
+      "permanent": false
+    },
+    {
+      "source": "/energy-dashboard/:path*",
+      "destination": "https://strong-dory-enabled.ngrok-free.app/energy-dashboard/:path*",
+      "permanent": false
     }
   ]
 }
