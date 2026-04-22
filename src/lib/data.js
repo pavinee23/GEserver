@@ -68,10 +68,10 @@ export const fallbackClients = [
     name: "Green Retail Group",
     slug: "green-retail-group",
     description: "ระบบขายหน้าร้านและสรุปยอดหลายสาขา พร้อมหน้ารายงานสำหรับผู้บริหาร",
-    status: "maintenance",
+    status: "online",
     contact_email: "it@green-retail.example.com",
     contact_phone: "02-555-1199",
-    system_url: "https://portal.example.com/green-retail-group",
+    system_url: "/customer-dashboard-login",
   },
 ];
 
