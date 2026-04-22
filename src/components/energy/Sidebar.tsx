@@ -1,7 +1,6 @@
 "use client";
 
 import { Home, BarChart2, MapPin, Bell, Settings, Monitor, Layout as LayoutIcon, Code, Users, FileText, MessageSquare, HelpCircle, UserCircle, LogOut } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useLocale } from "@/lib/LocaleContext";
@@ -37,24 +36,6 @@ export default function Sidebar() {
 
   return (
     <div className="w-64 bg-white shadow-lg flex flex-col">
-
-      {/* Top: Logo */}
-      <div className="px-4 pt-4 pb-2">
-        {/* Company Name */}
-        <div className="flex items-center gap-3 mb-1">
-          <Image
-            src="https://assets.zyrosite.com/cdn-cgi/image/format=auto,w=375,fit=crop,q=95/AMqDpBqx0RHlW36D/kenergysave-logo-m6L2JxknygHwL0Bj.png"
-            alt="K Energy Save"
-            width={96}
-            height={96}
-            className="w-24 h-24 object-contain flex-shrink-0"
-          />
-          <span className="text-sm font-bold text-gray-800 leading-tight">ZERA ENERGY</span>
-        </div>
-      </div>
-
-
-
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto p-4">
