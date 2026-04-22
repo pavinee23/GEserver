@@ -155,7 +155,7 @@ export const translations = {
       },
       "green-retail-group": {
         name: "Green Retail Group",
-        description: "ระบบขายหน้าร้านและสรุปยอดหลายสาขา พร้อมหน้ารายงานสำหรับผู้บริหาร",
+        description: "ระบบมอนิเตอริ่ง Demo",
       },
     },
   },
@@ -318,7 +318,7 @@ export const translations = {
       },
       "green-retail-group": {
         name: "Green Retail Group",
-        description: "Multi-branch POS and sales summary system with executive reporting dashboard",
+        description: "ระบบมอนิเตอริ่ง Demo",
       },
     },
   },
@@ -470,7 +470,7 @@ export const translations = {
       },
       "green-retail-group": {
         name: "Green Retail Group",
-        description: "多门店销售与汇总系统，提供管理层报表页面",
+        description: "ระบบมอนิเตอริ่ง Demo",
       },
     },
   },
@@ -622,7 +622,7 @@ export const translations = {
       },
       "green-retail-group": {
         name: "Green Retail Group",
-        description: "다지점 POS 판매 및 집계 시스템, 경영진용 보고서 대시보드 제공",
+        description: "ระบบมอนิเตอริ่ง Demo",
       },
     },
   },
