@@ -635,6 +635,206 @@ export default function ClientsUsersClient({ session }) {
     }
   };
 
+  const parseExpenseReceiptPaths = (receiptFile) => {
+    if (!receiptFile) return [];
+    try {
+      const p = JSON.parse(receiptFile);
+      return (Array.isArray(p) ? p : [p]).filter(Boolean);
+    } catch {
+      return [receiptFile].filter(Boolean);
+    }
+  };
+
+  const printExpenseAttachment = (path) => {
+    if (!path) return;
+    const url = String(path);
+    const isPdf = /\.pdf($|\?)/i.test(url);
+    const isImage = /\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(url);
+    const win = window.open("", "_blank");
+    if (!win) {
+      showToast("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up", false);
+      return;
+    }
+
+    const preview = isImage
+      ? `<img src="${url}" style="max-width:100%;height:auto;border:1px solid #d5d9e5;border-radius:8px" alt="attachment"/>`
+      : `<iframe src="${url}" style="width:100%;height:78vh;border:1px solid #d5d9e5;border-radius:8px;background:#fff"></iframe>`;
+
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>พิมพ์ไฟล์แนบ</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 16px; color: #0f172a; }
+        .bar { display:flex; gap:8px; margin-bottom:10px; align-items:center; flex-wrap:wrap; }
+        .btn { border:1px solid #cbd5e1; background:#f8fafc; border-radius:8px; padding:8px 12px; cursor:pointer; }
+        .btn.primary { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
+        @media print { .bar { display:none; } body { margin:0; } }
+      </style>
+    </head><body>
+      <div class="bar">
+        <button class="btn primary" onclick="window.print()">🖨️ พิมพ์ไฟล์</button>
+        <a class="btn" href="${url}" target="_blank" rel="noopener noreferrer">เปิดไฟล์โดยตรง</a>
+      </div>
+      ${preview}
+    </body></html>`);
+    win.document.close();
+
+    // Auto-open browser print dialog for PDF/Image attachments.
+    if (isPdf || isImage) {
+      setTimeout(() => {
+        try { win.focus(); win.print(); } catch {}
+      }, 500);
+    }
+  };
+
+  const printExpenseAttachmentsBatch = (pathsRaw, title = "ไฟล์แนบค่าใช้จ่าย") => {
+    const paths = (pathsRaw || []).filter(Boolean);
+    if (paths.length === 0) {
+      showToast("ไม่พบไฟล์แนบสำหรับพิมพ์", false);
+      return;
+    }
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      showToast("เบราว์เซอร์บล็อกหน้าต่างพิมพ์ กรุณาอนุญาต pop-up", false);
+      return;
+    }
+
+    const sections = paths.map((path, idx) => {
+      const url = String(path);
+      const isImage = /\.(png|jpe?g|webp|gif|bmp|svg)($|\?)/i.test(url);
+      const preview = isImage
+        ? `<img src="${url}" style="max-width:100%;height:auto;border:1px solid #d5d9e5;border-radius:8px" alt="attachment-${idx + 1}"/>`
+        : `<iframe src="${url}" style="width:100%;height:82vh;border:1px solid #d5d9e5;border-radius:8px;background:#fff"></iframe>`;
+
+      return `<section class="page">
+        <div class="meta">ไฟล์ ${idx + 1}/${paths.length}: ${url.split("/").pop()}</div>
+        ${preview}
+      </section>`;
+    }).join("");
+
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 16px; color: #0f172a; }
+        .bar { display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap; }
+        .btn { border:1px solid #cbd5e1; background:#f8fafc; border-radius:8px; padding:8px 12px; cursor:pointer; text-decoration:none; color:#0f172a; }
+        .btn.primary { background:#1d4ed8; color:#fff; border-color:#1d4ed8; }
+        .meta { font-size: 12px; color: #475569; margin: 0 0 8px 2px; }
+        .page { margin-bottom: 16px; }
+        .page:not(:last-child) { page-break-after: always; }
+        @media print {
+          .bar { display:none; }
+          body { margin:0; }
+          .page { margin:0; }
+        }
+      </style>
+    </head><body>
+      <div class="bar">
+        <button class="btn primary" onclick="window.print()">🖨️ พิมพ์ทั้งหมด (${paths.length} ไฟล์)</button>
+      </div>
+      ${sections}
+    </body></html>`);
+    win.document.close();
+
+    setTimeout(() => {
+      try { win.focus(); win.print(); } catch {}
+    }, 600);
+  };
+
+  const printExpenseBill = (exp) => {
+    const KO_CATEGORY_MAP = {
+      "ค่าเช่าเซิร์ฟเวอร์/โดเมน": "서버/도메인 임대료",
+      "ค่าบริการภายนอก": "외부 서비스 비용",
+      "ค่าจ้างพนักงาน": "직원 급여",
+      "ค่าใช้จ่ายสำนักงาน": "사무실 비용",
+      "ค่าขนส่ง": "운송비",
+      "ค่าวัสดุ": "자재비",
+      "ค่าโฆษณา": "광고비",
+      "อื่นๆ": "기타",
+    };
+    const statusLabel = exp.status === "แนบใบเสร็จแล้ว" ? "영수증 첨부됨" : "결제 대기";
+    const categoryLabel = KO_CATEGORY_MAP[exp.category] || exp.category;
+    const receiptNo = exp.receiptNumber || "—";
+    const note = exp.notes || "—";
+    const amount = Number(exp.amount || 0);
+    const currency = exp.currency || "THB";
+    const dateText = exp.date ? new Date(exp.date).toLocaleDateString("ko-KR") : "—";
+    const paths = parseExpenseReceiptPaths(exp.receiptFile);
+
+    const attachmentRows = paths.length > 0
+      ? paths.map((path, i) => {
+          const filename = path.split("/").pop();
+          const ext = filename.split(".").pop().toLowerCase();
+          const isImage = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
+          const isPdf = ext === "pdf";
+          if (isImage) {
+            return `<div class="att-item">
+              <div class="att-label">📎 ${i + 1}. ${filename}</div>
+              <img src="${path}" alt="${filename}" class="att-img" />
+            </div>`;
+          } else if (isPdf) {
+            return `<div class="att-item">
+              <div class="att-label">📄 ${i + 1}. <a href="${path}" target="_blank" rel="noopener noreferrer">${filename}</a></div>
+              <iframe src="${path}" width="100%" height="480px" style="border:1px solid #e2e8f0;border-radius:6px;display:block;margin-top:6px;" title="${filename}"></iframe>
+            </div>`;
+          } else {
+            return `<div class="att-item">
+              <div class="att-label">📎 ${i + 1}. <a href="${path}" target="_blank" rel="noopener noreferrer">${filename}</a></div>
+            </div>`;
+          }
+        }).join("")
+      : "<div class=\"muted\">첨부 파일 없음</div>";
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      showToast("팝업이 차단되었습니다. 팝업을 허용해 주세요.", false);
+      return;
+    }
+
+    win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+      <title>비용 청구서 ${exp.number}</title>
+      <style>
+        body { font-family: 'Noto Sans KR', 'Malgun Gothic', Arial, sans-serif; padding: 24px; color: #111; }
+        h2 { margin: 0 0 4px; }
+        .sub { color: #555; margin-bottom: 16px; font-size: 12px; }
+        .box { border: 1px solid #d6d9e4; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
+        .row { display: grid; grid-template-columns: 160px 1fr; border-bottom: 1px solid #eceff5; }
+        .row:last-child { border-bottom: none; }
+        .k { background: #f8fafc; padding: 10px 12px; color: #334155; font-weight: 700; }
+        .v { padding: 10px 12px; }
+        .amt { font-size: 20px; font-weight: 800; color: #b91c1c; }
+        .att-wrap { padding: 12px 14px; border: 1px dashed #cbd5e1; border-radius: 8px; }
+        .att-title { font-weight: 700; margin-bottom: 10px; font-size: 14px; }
+        .att-item { margin-bottom: 14px; }
+        .att-label { font-size: 12px; margin-bottom: 6px; color: #334155; }
+        .att-img { max-width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; display: block; }
+        .att-pdf { border: 1px solid #e2e8f0; border-radius: 6px; display: block; }
+        .muted { color: #64748b; font-size: 12px; }
+        .print-btn { margin-top: 16px; padding: 9px 22px; font-size: 14px; cursor: pointer; background: #1e40af; color: #fff; border: none; border-radius: 6px; }
+        @media print { .print-btn { display: none; } }
+      </style>
+    </head><body>
+      <h2>비용 청구서</h2>
+      <div class="sub">번호 ${exp.number} · 인쇄일시 ${new Date().toLocaleString("ko-KR")}</div>
+
+      <div class="box">
+        <div class="row"><div class="k">번호</div><div class="v"><strong>${exp.number}</strong></div></div>
+        <div class="row"><div class="k">카테고리</div><div class="v">${categoryLabel}</div></div>
+        <div class="row"><div class="k">금액</div><div class="v"><span class="amt">${amount.toLocaleString("ko-KR")}</span> ${currency}</div></div>
+        <div class="row"><div class="k">상태</div><div class="v">${statusLabel}</div></div>
+        <div class="row"><div class="k">영수증 번호</div><div class="v">${receiptNo}</div></div>
+        <div class="row"><div class="k">비고</div><div class="v">${note}</div></div>
+        <div class="row"><div class="k">날짜</div><div class="v">${dateText}</div></div>
+      </div>
+
+      <div class="att-wrap">
+        <div class="att-title">첨부 파일</div>
+        ${attachmentRows}
+      </div>
+
+      <button class="print-btn" onclick="window.print()">🖨️ 이 청구서 인쇄</button>
+    </body></html>`);
+    win.document.close();
+  };
+
   const getReportItems = () => {
     const source = reportDataType === "invoice" ? invoices : expenses;
     const getDate = item => reportDataType === "invoice" ? item.createdAt : item.date;
@@ -689,6 +889,32 @@ export default function ClientsUsersClient({ session }) {
       ? "<th>เลข Invoice</th><th>บริษัท</th><th>ยอด</th><th>สถานะ</th><th>วันครบกำหนด</th><th>หมายเหตุ</th><th>สร้างเมื่อ</th>"
       : "<th>เลขที่</th><th>หมวดหมู่</th><th>ยอด</th><th>หมายเหตุ</th><th>วันที่</th>";
     const colspan = isInv ? 7 : 5;
+
+    // For expense report: append JPG/JPEG attachments into the same printable page.
+    const expenseImageAttachments = isInv ? [] : items.flatMap((item) => {
+      const paths = parseExpenseReceiptPaths(item.receiptFile);
+      return paths
+        .filter((path) => /\.(jpe?g)($|\?)/i.test(String(path)))
+        .map((path, idx) => ({
+          number: item.number,
+          fileName: String(path).split("/").pop(),
+          path: String(path),
+          idx,
+        }));
+    });
+
+    const attachmentHtml = !isInv && expenseImageAttachments.length > 0
+      ? `<h3 style="margin:22px 0 10px;color:#1a1a2e">ไฟล์แนบรูป (JPG) สำหรับพิมพ์รวม</h3>
+         <div class="attach-wrap">
+           ${expenseImageAttachments.map((f, i) => `
+             <section class="attach-card">
+               <div class="attach-meta">${i + 1}. ${f.number} · ${f.fileName || `ไฟล์ ${f.idx + 1}`}</div>
+               <img src="${f.path}" alt="${f.fileName || "attachment"}" class="attach-img" />
+             </section>
+           `).join("")}
+         </div>`
+      : "";
+
     const win = window.open("", "_blank");
     win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
       <title>รายงาน${isInv ? "Invoice" : "ค่าใช้จ่าย"}</title>
@@ -701,12 +927,18 @@ export default function ClientsUsersClient({ session }) {
         td { padding: 7px 10px; border-bottom: 1px solid #ddd; }
         tr:nth-child(even) td { background: #f5f5f5; }
         .total { margin-top: 14px; font-size: 14px; font-weight: 700; text-align: right; }
+        .attach-wrap { display: block; }
+        .attach-card { margin: 0 0 18px; }
+        .attach-meta { font-size: 12px; color: #334155; margin: 0 0 6px; }
+        .attach-img { width: 100%; height: auto; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
+        @media print { .attach-card { page-break-inside: avoid; } }
         @media print { button { display: none; } }
       </style></head><body>
       <h2>รายงาน${isInv ? "Invoice" : "ค่าใช้จ่าย"} — ${modeLabel}</h2>
       <div class="sub">พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")} · รายการทั้งหมด ${items.length} รายการ</div>
       <table><thead><tr>${headers}</tr></thead><tbody>${rows || `<tr><td colspan="${colspan}" style="text-align:center;padding:24px;color:#888">ไม่พบรายการ</td></tr>`}</tbody></table>
       <div class="total">รวมทั้งสิ้น: ${totalAmt.toLocaleString("th-TH")} ${items[0]?.currency || "THB"}</div>
+      ${attachmentHtml}
       <br/><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer">🖨️ พิมพ์</button>
     </body></html>`);
     win.document.close();
@@ -1856,11 +2088,12 @@ export default function ClientsUsersClient({ session }) {
                           ? <span style={{ fontSize: 11, background: "#14532d", color: "#4ade80", borderRadius: 4, padding: "2px 8px", fontWeight: 700 }}>✅ แนบใบเสร็จแล้ว</span>
                           : <span style={{ fontSize: 11, background: "#2d1b4e", color: "#c084fc", borderRadius: 4, padding: "2px 8px", fontWeight: 700 }}>⏳ รอชำระ</span>}
                       </td>
-                      <td style={{ ...S.td, fontSize: 12 }}>{exp.receiptNumber ? <code style={{ color: "#a78bfa", fontSize: 11 }}>{exp.receiptNumber}</code> : <span style={{ color: "#4a5070" }}>—</span>}{(() => { if (!exp.receiptFile) return null; let paths = []; try { const p = JSON.parse(exp.receiptFile); paths = Array.isArray(p) ? p : [p]; } catch { paths = [exp.receiptFile]; } return paths.map((path, i) => <a key={i} href={path} target="_blank" rel="noopener noreferrer" style={{ marginLeft: 4, fontSize: 11, color: "#60a5fa" }}>📄{paths.length > 1 ? i+1 : ""}</a>); })()}</td>
+                      <td style={{ ...S.td, fontSize: 12 }}>{exp.receiptNumber ? <code style={{ color: "#a78bfa", fontSize: 11 }}>{exp.receiptNumber}</code> : <span style={{ color: "#4a5070" }}>—</span>}{(() => { const paths = parseExpenseReceiptPaths(exp.receiptFile); if (paths.length === 0) return null; return <><span style={{ marginLeft: 6, display: "inline-flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>{paths.map((path, i) => <span key={i} style={{ display: "inline-flex", gap: 4, alignItems: "center" }}><a href={path} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "#60a5fa" }}>📄{paths.length > 1 ? i + 1 : ""}</a><button type="button" title="พิมพ์ไฟล์แนบ" onClick={() => printExpenseAttachment(path)} style={{ border: "1px solid #334155", background: "#0f172a", color: "#93c5fd", borderRadius: 4, fontSize: 10, lineHeight: 1.2, padding: "1px 4px", cursor: "pointer" }}>🖨️</button></span>)}</span>{paths.length > 1 && <button type="button" title="พิมพ์รวมทุกไฟล์แนบ" onClick={() => printExpenseAttachmentsBatch(paths, `ไฟล์แนบ ${exp.number}`)} style={{ marginLeft: 6, border: "1px solid #1e40af", background: "#1e3a8a", color: "#dbeafe", borderRadius: 4, fontSize: 10, lineHeight: 1.2, padding: "1px 6px", cursor: "pointer" }}>🖨️รวม</button>}</>; })()}</td>
                       <td style={{ ...S.td, fontSize: 12, maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{exp.notes || <span style={{ color: "#4a5070" }}>—</span>}</td>
                       <td style={{ ...S.td, color: "#8b8fa8", fontSize: 12 }}>{new Date(exp.date).toLocaleDateString("th-TH")}</td>
                       <td style={S.td}>
                         <div style={{ display: "flex", gap: 6 }}>
+                          <button style={S.btn("#0f3a2b", "#5ecb8a")} title="พิมพ์บิล" onClick={() => printExpenseBill(exp)}>🖨️</button>
                           <button style={S.btn("#1e2d3d", "#60a5fa")} onClick={() => openEditExpense(exp)}>✏️</button>
                           <button style={S.btn("#2a1f1f", "#f87171")} onClick={() => deleteExpense(exp.id, exp.number)}>🗑️</button>
                         </div>
@@ -2258,16 +2491,18 @@ export default function ClientsUsersClient({ session }) {
                 <label style={S.label}>ไฟล์ใบเสร็จ (PDF / รูปภาพ) — เพิ่มได้หลายไฟล์</label>
                 {/* Existing saved files */}
                 {(() => {
-                  let saved = [];
-                  if (expenseForm.receiptFile) {
-                    try { const p = JSON.parse(expenseForm.receiptFile); saved = Array.isArray(p) ? p : [p]; }
-                    catch { saved = [expenseForm.receiptFile]; }
-                  }
+                  const saved = parseExpenseReceiptPaths(expenseForm.receiptFile);
                   return saved.length > 0 ? (
                     <div style={{ marginBottom: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {saved.length > 1 && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 2 }}>
+                          <button type="button" title="พิมพ์รวมทุกไฟล์แนบ" onClick={() => printExpenseAttachmentsBatch(saved, `ไฟล์แนบ ${expenseForm.receiptNumber || 'ค่าใช้จ่าย'}`)} style={{ border: "1px solid #1e40af", background: "#1e3a8a", color: "#dbeafe", borderRadius: 4, fontSize: 11, lineHeight: 1.2, padding: "3px 8px", cursor: "pointer" }}>🖨️ พิมพ์รวมทุกไฟล์</button>
+                        </div>
+                      )}
                       {saved.map((path, idx) => (
                         <div key={idx} style={{ display: "flex", alignItems: "center", gap: 8, background: "#111827", borderRadius: 6, padding: "5px 10px", border: "1px solid #2a3a55" }}>
                           <a href={path} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#4ade80", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📄 {path.split("/").pop()}</a>
+                          <button type="button" title="พิมพ์ไฟล์แนบ" onClick={() => printExpenseAttachment(path)} style={{ border: "1px solid #334155", background: "#0f172a", color: "#93c5fd", borderRadius: 4, fontSize: 10, lineHeight: 1.2, padding: "2px 6px", cursor: "pointer" }}>🖨️</button>
                           <button type="button" style={{ background: "none", border: "none", color: "#f87171", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: "0 2px" }}
                             onClick={() => {
                               const newSaved = saved.filter((_, i) => i !== idx);
