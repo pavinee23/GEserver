@@ -1189,6 +1189,9 @@ export default function PageClient() {
                 <div style={{ color: "#93c5fd", fontSize: "0.9rem", marginTop: "0.3rem" }}>
                   {t.completedSub}
                 </div>
+                <div style={{ color: "#cbd5e1", fontSize: "0.85rem", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  📍 {t.addressLine1} {t.addressLine2}
+                </div>
               </div>
             </div>
             <a
