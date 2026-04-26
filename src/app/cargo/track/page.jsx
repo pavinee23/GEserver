@@ -334,18 +334,59 @@ export default function CargoTrackPage() {
           <div style={{ fontSize: 12, color: "#64748b", marginBottom: 20 }}>화물 발송 신청 · กรอกข้อมูลเพื่อแจ้งจัดส่ง</div>
 
           {reqDone ? (
-            <div style={{ textAlign: "center", padding: "28px 0" }}>
-              <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
-              <div style={{ fontSize: 16, fontWeight: 700, color: "#4ade80", marginBottom: 6 }}>แจ้งส่งสินค้าสำเร็จ!</div>
-              <div style={{ fontSize: 13, color: "#8b8fa8", marginBottom: 16 }}>ทีมงานได้รับข้อมูลของคุณแล้ว</div>
-              <div style={{ background: "#1e2130", borderRadius: 10, padding: "14px 18px", display: "inline-block" }}>
-                <div style={{ fontSize: 11, color: "#64748b", marginBottom: 4 }}>หมายเลขอ้างอิง</div>
-                <div style={{ fontFamily: "monospace", fontSize: 17, fontWeight: 900, color: "#facc15" }}>{reqDone.number}</div>
+            <div style={{ textAlign: "center", padding: "20px 0" }}>
+              {/* Success header */}
+              <div style={{ fontSize: 44, marginBottom: 10 }}>✅</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: "#4ade80", marginBottom: 4 }}>แจ้งส่งสินค้าสำเร็จ!</div>
+              <div style={{ fontSize: 13, color: "#8b8fa8", marginBottom: 20 }}>ทีมงานได้รับข้อมูลของคุณแล้ว</div>
+
+              {/* Reference number — big & prominent */}
+              <div style={{ background: "linear-gradient(135deg,#1a1d2a,#1e2340)", border: "2px solid #facc15", borderRadius: 14, padding: "18px 20px", marginBottom: 16 }}>
+                <div style={{ fontSize: 11, color: "#64748b", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>📋 หมายเลขแจ้งส่งสินค้า</div>
+                <div style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 900, color: "#facc15", letterSpacing: 2 }}>{reqDone.number}</div>
+                <div style={{ fontSize: 11, color: "#facc1588", marginTop: 6 }}>화물 접수 번호 · Shipment Reference</div>
               </div>
-              <div style={{ marginTop: 8, fontSize: 12, color: "#64748b" }}>บันทึกหมายเลขนี้ไว้เพื่อตรวจสอบสถานะ</div>
-              <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 20 }}>
-                <button onClick={() => { setTab("track"); setTrackInput(reqDone.number); setReqDone(null); }} style={{ padding: "10px 20px", background: "#facc15", color: "#000", fontWeight: 800, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>🔍 ตรวจสอบสถานะ</button>
-                <button onClick={() => setReqDone(null)} style={{ padding: "10px 20px", background: "#1e2130", border: "1px solid #2a2d3a", color: "#e2e8f0", fontWeight: 700, borderRadius: 8, cursor: "pointer", fontSize: 13 }}>+ แจ้งส่งใหม่</button>
+
+              {/* Screenshot instruction */}
+              <div style={{ background: "#1e2130", border: "1.5px solid #f59e0b44", borderRadius: 10, padding: "14px 16px", marginBottom: 20, textAlign: "left" }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#f59e0b", marginBottom: 8 }}>📸 กรุณาแคปหน้าจอ / 화면을 캡처해 주세요</div>
+                <div style={{ fontSize: 12, color: "#e2e8f0", lineHeight: 1.7 }}>
+                  แคปหน้าจอเลขนี้ไว้ก่อนปิด แล้ว<br />
+                  <span style={{ color: "#facc15", fontWeight: 700 }}>แอดไลน์เพื่อส่งเลขแจ้งส่งให้ทีมงาน</span>
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>이 번호를 캡처하고 라인을 추가해 주세요</div>
+              </div>
+
+              {/* LINE QR code */}
+              <div style={{ background: "#fff", borderRadius: 14, padding: 16, display: "inline-block", marginBottom: 16, boxShadow: "0 4px 24px rgba(0,0,0,.4)" }}>
+                <div style={{ fontSize: 12, color: "#06c755", fontWeight: 800, marginBottom: 10, textAlign: "center" }}>💬 แอดไลน์ GOEUN CARGO</div>
+                <img
+                  src="/uploads/logos/line-qr.png"
+                  alt="LINE QR Code"
+                  style={{ width: 180, height: 180, objectFit: "contain", display: "block", margin: "0 auto" }}
+                  onError={e => {
+                    e.target.style.display = "none";
+                    e.target.nextSibling.style.display = "block";
+                  }}
+                />
+                <div style={{ display: "none", width: 180, height: 180, background: "#f0fdf4", borderRadius: 8, alignItems: "center", justifyContent: "center", flexDirection: "column", color: "#16a34a" }}>
+                  <div style={{ fontSize: 32 }}>💬</div>
+                  <div style={{ fontSize: 12, fontWeight: 700 }}>LINE QR Code</div>
+                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>GOEUN CARGO</div>
+                </div>
+                <div style={{ fontSize: 11, color: "#64748b", textAlign: "center", marginTop: 10 }}>สแกน QR เพื่อแอดไลน์ / QR 스캔으로 라인 추가</div>
+              </div>
+
+              {/* Action buttons */}
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                <button onClick={() => { setTab("track"); setTrackInput(reqDone.number); setReqDone(null); }}
+                  style={{ padding: "10px 18px", background: "#facc15", color: "#000", fontWeight: 800, border: "none", borderRadius: 8, cursor: "pointer", fontSize: 13 }}>
+                  🔍 ตรวจสอบสถานะ
+                </button>
+                <button onClick={() => setReqDone(null)}
+                  style={{ padding: "10px 18px", background: "#1e2130", border: "1px solid #2a2d3a", color: "#e2e8f0", fontWeight: 700, borderRadius: 8, cursor: "pointer", fontSize: 13 }}>
+                  + แจ้งส่งใหม่
+                </button>
               </div>
             </div>
           ) : (

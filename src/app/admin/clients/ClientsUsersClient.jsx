@@ -176,6 +176,7 @@ export default function ClientsUsersClient({ session }) {
 
   // cargo
   const [cargoOrders, setCargoOrders] = useState([]);
+  const [cargoCustomers, setCargoCustomers] = useState([]);
   const [cargoModal, setCargoModal] = useState(false);
   const [editCargoId, setEditCargoId] = useState(null);
   const [savingCargo, setSavingCargo] = useState(false);
@@ -241,10 +242,17 @@ export default function ClientsUsersClient({ session }) {
     } catch { /* silent */ }
   }, []);
 
+  const loadCargoCustomers = useCallback(async () => {
+    try {
+      const d = await readJsonResponse(await fetch("/api/admin/cargo/customers"));
+      setCargoCustomers(d.customers || []);
+    } catch { /* silent */ }
+  }, []);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.allSettled([loadClients(), loadUsers(), loadInvoices(), loadReceipts(), loadServices(), loadExpenses(), loadCustomers(), loadCargo()])
+    Promise.allSettled([loadClients(), loadUsers(), loadInvoices(), loadReceipts(), loadServices(), loadExpenses(), loadCustomers(), loadCargo(), loadCargoCustomers()])
       .then((results) => {
         if (!active) return;
         const failed = results.filter((result) => result.status === "rejected");
@@ -260,7 +268,7 @@ export default function ClientsUsersClient({ session }) {
     return () => {
       active = false;
     };
-  }, [loadClients, loadUsers, loadInvoices, loadReceipts, loadServices, loadExpenses, loadCustomers, loadCargo]);
+  }, [loadClients, loadUsers, loadInvoices, loadReceipts, loadServices, loadExpenses, loadCustomers, loadCargo, loadCargoCustomers]);
 
   // ── Client Modal ──
   const openAddClient = () => {
@@ -2374,6 +2382,7 @@ export default function ClientsUsersClient({ session }) {
                 { key: "payment",       icon: "💰", label: "ยืนยันชำระเงิน" },
                 { key: "shipping-cost", icon: "📤", label: "บันทึกค่าส่ง" },
                 { key: "ledger",        icon: "📊", label: "สรุปบัญชี" },
+                { key: "customers",     icon: "👤", label: "ลูกค้าลงทะเบียน" },
               ].map(st => (
                 <button key={st.key} onClick={() => setCargoSubTab(st.key)} style={{ padding: "8px 14px", borderRadius: 8, border: cargoSubTab === st.key ? "none" : "1px solid #2a2d3a", background: cargoSubTab === st.key ? "#facc15" : "#1e2130", color: cargoSubTab === st.key ? "#000" : "#8b8fa8", fontWeight: cargoSubTab === st.key ? 800 : 500, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
                   {st.icon} {st.label}
@@ -2732,6 +2741,59 @@ export default function ClientsUsersClient({ session }) {
                       </tbody>
                     </table>
                   </div>
+                </>
+              );
+            })()}
+
+            {/* ── CUSTOMERS sub-tab ── */}
+            {cargoSubTab === "customers" && (() => {
+              return (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#e2e8f0" }}>👤 ลูกค้าลงทะเบียน</div>
+                      <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>ผู้ใช้ที่ลงทะเบียนผ่านหน้า cargo/track · 총 {cargoCustomers.length} คน</div>
+                    </div>
+                    <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "8px 14px", fontWeight: 700, fontSize: 12 }} onClick={loadCargoCustomers}>🔄 รีเฟรช</button>
+                  </div>
+
+                  {cargoCustomers.length === 0 ? (
+                    <div style={{ padding: 40, textAlign: "center", color: "#64748b", background: "#1a1d27", borderRadius: 12, border: "2px dashed #2a2d3a" }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>👤</div>
+                      <div>ยังไม่มีลูกค้าลงทะเบียน</div>
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <thead>
+                          <tr style={{ background: "#1e2130" }}>
+                            {["#", "ชื่อ", "เบอร์โทร", "อีเมล", "วันที่ลงทะเบียน", ""].map((h, i) => (
+                              <th key={i} style={{ padding: "9px 10px", textAlign: "left", color: "#8b8fa8", fontWeight: 700, fontSize: 11, borderBottom: "1px solid #2a2d3a", whiteSpace: "nowrap" }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {cargoCustomers.map((c, i) => (
+                            <tr key={c.id} style={{ borderBottom: "1px solid #2a2d3a", background: i % 2 === 0 ? "#1a1d27" : "#1e2130" }}>
+                              <td style={{ padding: "9px 10px", color: "#64748b" }}>{i + 1}</td>
+                              <td style={{ padding: "9px 10px", color: "#e2e8f0", fontWeight: 600 }}>{c.name}</td>
+                              <td style={{ padding: "9px 10px", color: "#94a3b8" }}>{c.phone || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                              <td style={{ padding: "9px 10px", color: "#94a3b8" }}>{c.email || <span style={{ color: "#4a5070" }}>—</span>}</td>
+                              <td style={{ padding: "9px 10px", color: "#64748b", fontSize: 11 }}>{new Date(c.createdAt).toLocaleString("th-TH", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</td>
+                              <td style={{ padding: "9px 10px" }}>
+                                <button onClick={async () => {
+                                  if (!confirm(`ลบ ${c.name}?`)) return;
+                                  const res = await fetch(`/api/admin/cargo/customers?id=${c.id}`, { method: "DELETE" });
+                                  if (res.ok) { showToast("ลบแล้ว"); loadCargoCustomers(); }
+                                  else showToast("ลบไม่ได้", false);
+                                }} style={{ ...S.btn("#2a1f1f", "#f87171"), fontSize: 11, padding: "4px 10px" }}>🗑️ ลบ</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </>
               );
             })()}
