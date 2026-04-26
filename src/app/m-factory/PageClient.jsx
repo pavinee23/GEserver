@@ -144,6 +144,7 @@ const CONTENT = {
     servicesHeading: "ครบทุกความต้องการด้านพื้นที่",
     galleryBadge: "ภาพโครงการ",
     galleryHeading: "โกดังและโรงงานที่กำลังก่อสร้าง",
+    gallerySub: "สนใจสอบถามราคา นัดเยี่ยมชมโครงการ กรุณาสแกนคิวอาร์โค้ดไลน์",
     galleryCta: "🚨 สนใจเช่า-ซื้อโกดัง คลิก!!",
     resortBadge: "ภาพรีสอร์ท",
     resortHeading: "รีสอร์ทส่วนตัว เงียบสงบ เป็นส่วนตัว",
@@ -224,6 +225,7 @@ const CONTENT = {
     servicesHeading: "满足您的所有空间需求",
     galleryBadge: "项目图片",
     galleryHeading: "在建仓库及工厂",
+    gallerySub: "如有意向，请扫描LINE二维码和我们预约参观",
     galleryCta: "🚨 有意租购仓库，请点击!!",
     resortBadge: "度假村图片",
     resortHeading: "私人度假村 · 宁静私密",
@@ -304,6 +306,7 @@ const CONTENT = {
     servicesHeading: "Complete Space Solutions",
     galleryBadge: "Project Gallery",
     galleryHeading: "Warehouses & Factories Under Construction",
+    gallerySub: "Interested in pricing or a site visit? Scan the LINE QR code to get in touch.",
     galleryCta: "🚨 Interested in Rent / Buy — Click!!",
     resortBadge: "Resort Gallery",
     resortHeading: "Private Resort — Peaceful & Exclusive",
@@ -1207,6 +1210,45 @@ export default function PageClient() {
       <section id="gallery" style={{ padding: "5.5rem 2rem", background: "#ffffff" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <SectionHeader badge={t.galleryBadge} heading={t.galleryHeading} />
+
+          {/* Gallery sub text + LINE QR */}
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: "1.25rem", flexWrap: "wrap",
+            margin: "-0.5rem auto 2rem",
+            maxWidth: 560,
+            padding: "1.25rem 1.5rem",
+            borderRadius: "1.25rem",
+            background: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
+            border: "2px solid #86efac",
+            boxShadow: "0 4px 20px rgba(34,197,94,0.15)",
+          }}>
+            <img
+              src="/m-factory/line-qr.jpg"
+              alt="LINE QR Code"
+              style={{ width: 90, height: 90, borderRadius: "0.75rem", flexShrink: 0, objectFit: "cover", border: "2px solid #22c55e" }}
+            />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: "1rem", color: "#15803d", marginBottom: "0.35rem" }}>
+                📍 {t.gallerySub}
+              </div>
+              <a
+                href="https://lin.ee/xrAU8PC"
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: "0.4rem",
+                  padding: "0.5rem 1.25rem", borderRadius: 999,
+                  background: "linear-gradient(135deg, #16a34a, #22c55e)",
+                  color: "#fff", fontWeight: 700, fontSize: "0.9rem",
+                  textDecoration: "none",
+                  boxShadow: "0 4px 14px rgba(34,197,94,0.4)",
+                }}
+              >
+                💬 LINE
+              </a>
+            </div>
+          </div>
 
           {/* LED Billboard banner */}
           <div style={{ textAlign: "center", marginBottom: "3rem", marginTop: "-0.5rem" }}>
