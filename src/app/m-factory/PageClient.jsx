@@ -1328,7 +1328,7 @@ export default function PageClient() {
                 {t.addressLine2}
               </div>
               <a
-                href="https://maps.app.goo.gl/Fhd7DpvL1K8m47k48"
+                href="https://maps.app.goo.gl/dHVPQnj8as4Lo28w9"
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{

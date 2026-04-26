@@ -60,26 +60,29 @@ function injectStyle() {
   _injected = true;
 }
 
-/* Layout: row1 [wide, tall], row2 [3 equal], row3 [tall, wide] */
-const LAYOUT = [
-  { n: 1, cls: "gc-2" },
-  { n: 2, cls: "gc-1" },
-  { n: 3, cls: "gc-1" },
-  { n: 4, cls: "gc-1" },
-  { n: 5, cls: "gc-1" },
-  { n: 6, cls: "gc-1" },
-  { n: 7, cls: "gc-2" },
+/* Layout: row1 [wide, tall], row2 [3 equal], row3 [tall, wide], row4 [extra 3] */
+const IMAGES = [
+  { src: "/m-factory/LINE_ALBUM_12369_260417_1.jpg", cls: "gc-2" },
+  { src: "/m-factory/LINE_ALBUM_12369_260417_2.jpg", cls: "gc-1" },
+  { src: "/m-factory/LINE_ALBUM_12369_260417_3.jpg", cls: "gc-1" },
+  { src: "/m-factory/LINE_ALBUM_12369_260417_4.jpg", cls: "gc-1" },
+  { src: "/m-factory/LINE_ALBUM_12369_260417_5.jpg", cls: "gc-1" },
+  { src: "/m-factory/LINE_ALBUM_12369_260417_6.jpg", cls: "gc-1" },
+  { src: "/m-factory/LINE_ALBUM_12369_260417_7.jpg", cls: "gc-2" },
+  { src: "/m-factory/13976.jpg",       cls: "gc-1" },
+  { src: "/m-factory/S__26886151.jpg", cls: "gc-1" },
+  { src: "/m-factory/S__27058264.jpg", cls: "gc-1" },
 ];
 
 export default function GalleryGrid() {
   useEffect(() => { injectStyle(); }, []);
   return (
     <div className="mf-gallery">
-      {LAYOUT.map(({ n, cls }) => (
-        <div key={n} className={`mf-gallery-card ${cls}`}>
+      {IMAGES.map(({ src, cls }) => (
+        <div key={src} className={`mf-gallery-card ${cls}`}>
           <img
-            src={`/m-factory/LINE_ALBUM_12369_260417_${n}.jpg`}
-            alt={`M-Factory รูปที่ ${n}`}
+            src={src}
+            alt="M-Factory"
           />
           <div className="overlay" />
         </div>
