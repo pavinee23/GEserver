@@ -1,4 +1,16 @@
 export default function ServicesSection({ ui, services }) {
+  const SERVICE_ICONS = {
+    "บริการดูแลระบบ": "🛡️",
+    "บริการเช่าโดเมนรายปี": "🌐",
+    "บริการยิงแอด": "📣",
+    "บริการออกแบบหน้าเว็บ": "🎨",
+    "บริการพัฒนาระบบ": "⚙️",
+    "บริการอื่นๆ": "✨",
+    "พัฒนาระบบเฉพาะธุรกิจ": "💻",
+    "เชื่อมต่อฐานข้อมูลและรายงาน": "🗄️",
+    "ดูแลเซิร์ฟเวอร์และสิทธิ์การใช้งาน": "🔐",
+  };
+  const FALLBACK_ICONS = ["🛡️","🌐","📣","🎨","⚙️","✨"];
   return (
     <section className="agency-section agency-section-plain" id="services">
       <div className="container-xxl agency-shell">
@@ -18,7 +30,7 @@ export default function ServicesSection({ ui, services }) {
                   className={`agency-service-card ${index === 1 ? "agency-service-card-featured" : ""}`}
                 >
                   <div className="service-badge">{String(index + 1).padStart(2, "0")}</div>
-                  <div className="service-icon-ring">{service.highlight.slice(0, 1)}</div>
+                  <div className="service-icon-ring">{service.icon || SERVICE_ICONS[service.title] || FALLBACK_ICONS[index] || "⭐"}</div>
                   <h3>{service.title}</h3>
                   <p>{service.description}</p>
                   <span className="service-highlight">{service.highlight}</span>

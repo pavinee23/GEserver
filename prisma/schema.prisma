@@ -299,3 +299,34 @@ enum NotificationChannel {
   LINE
   PUSH
 }
+
+model CargoOrder {
+  id            String   @id @default(cuid())
+  number        String   @unique
+  senderName    String
+  senderPhone   String?
+  receiverName  String
+  receiverPhone String?
+  receiverAddress String? @db.Text
+  direction     String   @default("TH_TO_KR") // "TH_TO_KR" | "KR_TO_TH"
+  weightKg      Decimal? @db.Decimal(8, 2)
+  sizeNote      String?
+  itemDesc      String?  @db.Text
+  currency      String   @default("THB")
+  income        Decimal  @default(0) @db.Decimal(10, 2)
+  expense       Decimal  @default(0) @db.Decimal(10, 2)
+  status        String   @default("รับพัสดุแล้ว")
+  trackingCode  String?
+  passportNo    String?
+  imageUrl      String?  @db.Text
+  parcelImageUrl String? @db.Text
+  notes         String?  @db.Text
+  shippedAt     DateTime?
+  deliveredAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([direction])
+  @@index([createdAt])
+}

@@ -72,7 +72,7 @@ async function readJsonResponse(response) {
 }
 
 export default function ClientsUsersClient({ session }) {
-  const [tab, setTab] = useState("clients"); // "clients" | "users" | "invoices" | "receipts" | "expenses"
+  const [tab, setTab] = useState("clients"); // "clients" | "users" | "invoices" | "receipts" | "expenses" | "cargo"
   const [clients, setClients] = useState([]);
   const [users, setUsers] = useState([]);
   const [invoices, setInvoices] = useState([]);
@@ -174,6 +174,22 @@ export default function ClientsUsersClient({ session }) {
   const [reportFrom, setReportFrom] = useState("");
   const [reportTo, setReportTo] = useState("");
 
+  // cargo
+  const [cargoOrders, setCargoOrders] = useState([]);
+  const [cargoModal, setCargoModal] = useState(false);
+  const [editCargoId, setEditCargoId] = useState(null);
+  const [savingCargo, setSavingCargo] = useState(false);
+  const [cargoSearch, setCargoSearch] = useState("");
+  const [cargoSubTab, setCargoSubTab] = useState("add");
+  const [cargoInlineEdits, setCargoInlineEdits] = useState({});
+  const [savingCargoInline, setSavingCargoInline] = useState({});
+  const [cargoForm, setCargoForm] = useState({
+    senderName: "", senderPhone: "", receiverName: "", receiverPhone: "",
+    receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "",
+    itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว",
+    trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "",
+  });
+
   const showToast = (msg, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3000);
@@ -218,10 +234,17 @@ export default function ClientsUsersClient({ session }) {
     setCustomers(d.customers || []);
   }, [filterCustomerClientId]);
 
+  const loadCargo = useCallback(async () => {
+    try {
+      const d = await readJsonResponse(await fetch("/api/admin/cargo"));
+      setCargoOrders(d.orders || []);
+    } catch { /* silent */ }
+  }, []);
+
   useEffect(() => {
     let active = true;
     setLoading(true);
-    Promise.allSettled([loadClients(), loadUsers(), loadInvoices(), loadReceipts(), loadServices(), loadExpenses(), loadCustomers()])
+    Promise.allSettled([loadClients(), loadUsers(), loadInvoices(), loadReceipts(), loadServices(), loadExpenses(), loadCustomers(), loadCargo()])
       .then((results) => {
         if (!active) return;
         const failed = results.filter((result) => result.status === "rejected");
@@ -237,7 +260,7 @@ export default function ClientsUsersClient({ session }) {
     return () => {
       active = false;
     };
-  }, [loadClients, loadUsers, loadInvoices, loadReceipts, loadServices, loadExpenses, loadCustomers]);
+  }, [loadClients, loadUsers, loadInvoices, loadReceipts, loadServices, loadExpenses, loadCustomers, loadCargo]);
 
   // ── Client Modal ──
   const openAddClient = () => {
@@ -772,8 +795,11 @@ export default function ClientsUsersClient({ session }) {
             </div>`;
           } else if (isPdf) {
             return `<div class="att-item">
-              <div class="att-label">📄 ${i + 1}. <a href="${path}" target="_blank" rel="noopener noreferrer">${filename}</a></div>
-              <iframe src="${path}" width="100%" height="480px" style="border:1px solid #e2e8f0;border-radius:6px;display:block;margin-top:6px;" title="${filename}"></iframe>
+              <div class="att-label">📄 ${i + 1}. ${filename}</div>
+              <div class="pdf-box">
+                <a href="${path}" target="_blank" rel="noopener noreferrer" class="pdf-open-btn">↗ 새 탭에서 PDF 열기 — ${filename}</a>
+                <iframe src="${path}" title="${filename}"></iframe>
+              </div>
             </div>`;
           } else {
             return `<div class="att-item">
@@ -792,45 +818,172 @@ export default function ClientsUsersClient({ session }) {
     win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
       <title>비용 청구서 ${exp.number}</title>
       <style>
-        body { font-family: 'Noto Sans KR', 'Malgun Gothic', Arial, sans-serif; padding: 24px; color: #111; }
-        h2 { margin: 0 0 4px; }
-        .sub { color: #555; margin-bottom: 16px; font-size: 12px; }
-        .box { border: 1px solid #d6d9e4; border-radius: 10px; overflow: hidden; margin-bottom: 16px; }
-        .row { display: grid; grid-template-columns: 160px 1fr; border-bottom: 1px solid #eceff5; }
-        .row:last-child { border-bottom: none; }
-        .k { background: #f8fafc; padding: 10px 12px; color: #334155; font-weight: 700; }
-        .v { padding: 10px 12px; }
-        .amt { font-size: 20px; font-weight: 800; color: #b91c1c; }
-        .att-wrap { padding: 12px 14px; border: 1px dashed #cbd5e1; border-radius: 8px; }
-        .att-title { font-weight: 700; margin-bottom: 10px; font-size: 14px; }
-        .att-item { margin-bottom: 14px; }
-        .att-label { font-size: 12px; margin-bottom: 6px; color: #334155; }
-        .att-img { max-width: 100%; border: 1px solid #e2e8f0; border-radius: 6px; display: block; }
-        .att-pdf { border: 1px solid #e2e8f0; border-radius: 6px; display: block; }
-        .muted { color: #64748b; font-size: 12px; }
-        .print-btn { margin-top: 16px; padding: 9px 22px; font-size: 14px; cursor: pointer; background: #1e40af; color: #fff; border: none; border-radius: 6px; }
-        @media print { .print-btn { display: none; } }
+        @page { size: A4 portrait; margin: 14mm 16mm; }
+        * { box-sizing: border-box; }
+        html { background: #e8edf2; color-scheme: light !important; }
+        body { font-family: 'Malgun Gothic', 'Noto Sans KR', Arial, sans-serif; margin: 0; padding: 28px 0 40px; color: #111; font-size: 13px; }
+
+        /* Paper sheet */
+        .paper {
+          background: #fff;
+          width: 210mm;
+          min-height: 297mm;
+          margin: 0 auto;
+          padding: 28mm 22mm 24mm;
+          box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+          border-radius: 2px;
+        }
+
+        /* Header */
+        .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #1e293b; }
+        .header-left h1 { font-size: 22px; font-weight: 800; color: #1e293b; margin: 0 0 4px; letter-spacing: -0.5px; }
+        .header-left .doc-num { font-size: 12px; color: #64748b; }
+        .header-right { text-align: right; font-size: 11px; color: #64748b; line-height: 1.7; }
+        .header-right strong { font-size: 13px; color: #1e293b; }
+
+        /* Info table */
+        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 22px; }
+        .info-table tr { border-bottom: 1px solid #f1f5f9; }
+        .info-table tr:last-child { border-bottom: none; }
+        .info-table td { padding: 8px 10px; vertical-align: top; }
+        .info-table td:first-child { width: 140px; font-weight: 700; color: #475569; font-size: 12px; background: #f8fafc; }
+        .info-table td:last-child { color: #1e293b; }
+        .amt { font-size: 22px; font-weight: 900; color: #b91c1c; }
+        .badge { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+        .badge-green { background: #dcfce7; color: #166534; }
+        .badge-purple { background: #f3e8ff; color: #6b21a8; }
+
+        /* Divider */
+        .divider { border: none; border-top: 1px solid #e2e8f0; margin: 18px 0; }
+
+        /* Attachments */
+        .att-title { font-size: 12px; font-weight: 700; color: #475569; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 12px; }
+        .att-item { margin-bottom: 16px; }
+        .att-label { font-size: 11px; color: #64748b; margin-bottom: 6px; }
+        .att-img { max-width: 100%; border: 1px solid #e2e8f0; border-radius: 4px; display: block; }
+        .pdf-box { border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; background: #fff; }
+        .pdf-open-btn { display: block; padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; color: #1e40af; font-weight: 700; text-decoration: none; font-size: 12px; }
+        .pdf-open-btn:hover { background: #eff6ff; }
+        iframe { display: block; border: none; width: 100%; height: 500px; background: #fff; }
+
+        /* Footer */
+        .footer { margin-top: 32px; padding-top: 14px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+        .footer-co { font-size: 11px; color: #94a3b8; }
+        .print-btn { padding: 9px 24px; font-size: 13px; cursor: pointer; background: #1e293b; color: #fff; border: none; border-radius: 6px; font-weight: 700; }
+
+        @media print {
+          html { background: #fff !important; }
+          body { padding: 0; }
+          .paper { box-shadow: none; width: 100%; min-height: unset; padding: 0; margin: 0; border-radius: 0; }
+          .print-btn { display: none; }
+          iframe { height: 80vh; }
+        }
       </style>
     </head><body>
-      <h2>비용 청구서</h2>
-      <div class="sub">번호 ${exp.number} · 인쇄일시 ${new Date().toLocaleString("ko-KR")}</div>
+      <div class="paper">
 
-      <div class="box">
-        <div class="row"><div class="k">번호</div><div class="v"><strong>${exp.number}</strong></div></div>
-        <div class="row"><div class="k">카테고리</div><div class="v">${categoryLabel}</div></div>
-        <div class="row"><div class="k">금액</div><div class="v"><span class="amt">${amount.toLocaleString("ko-KR")}</span> ${currency}</div></div>
-        <div class="row"><div class="k">상태</div><div class="v">${statusLabel}</div></div>
-        <div class="row"><div class="k">영수증 번호</div><div class="v">${receiptNo}</div></div>
-        <div class="row"><div class="k">비고</div><div class="v">${note}</div></div>
-        <div class="row"><div class="k">날짜</div><div class="v">${dateText}</div></div>
-      </div>
+        <div class="header">
+          <div class="header-left">
+            <h1>비용 청구서</h1>
+            <div class="doc-num">${exp.number}</div>
+          </div>
+          <div class="header-right">
+            <strong>GOEUN SERVER HUB</strong><br/>
+            인쇄일시: ${new Date().toLocaleString("ko-KR")}
+          </div>
+        </div>
 
-      <div class="att-wrap">
+        <table class="info-table">
+          <tr><td>번호</td><td><strong>${exp.number}</strong></td></tr>
+          <tr><td>카테고리</td><td>${categoryLabel}</td></tr>
+          <tr><td>금액</td><td><span class="amt">${amount.toLocaleString("ko-KR")}</span> <span style="font-size:13px;color:#64748b">${currency}</span></td></tr>
+          <tr><td>상태</td><td><span class="badge ${exp.status === "แนบใบเสร็จแล้ว" ? "badge-green" : "badge-purple"}">${statusLabel}</span></td></tr>
+          <tr><td>영수증 번호</td><td>${receiptNo}</td></tr>
+          <tr><td>비고</td><td>${note}</td></tr>
+          <tr><td>날짜</td><td>${dateText}</td></tr>
+        </table>
+
+        <hr class="divider"/>
+
         <div class="att-title">첨부 파일</div>
         ${attachmentRows}
-      </div>
 
-      <button class="print-btn" onclick="window.print()">🖨️ 이 청구서 인쇄</button>
+        <div class="footer">
+          <div class="footer-co">GOEUN SERVER HUB · goeunserverhub.com</div>
+          <button class="print-btn" onclick="window.print()">🖨️ 인쇄</button>
+        </div>
+
+      </div>
+    </body></html>`);
+    win.document.close();
+  };
+
+  const printExpenseReport = () => {
+    if (expenses.length === 0) { showToast("지출 데이터가 없습니다", false); return; }
+    const KO_CATEGORY = {
+      "ค่าเช่าเซิร์ฟเวอร์/โดเมน": "서버/도메인 임대료",
+      "ค่าบริการภายนอก": "외부 서비스 비용",
+      "ค่าแรง/เงินเดือน": "인건비/급여",
+      "ค่าอุปกรณ์/ซอฟต์แวร์": "장비/소프트웨어 비용",
+      "ค่าโฆษณา": "광고비",
+      "ค่าสาธารณูปโภค": "공공요금",
+      "อื่นๆ": "기타",
+    };
+    const totals = expenses.reduce((acc, e) => {
+      const cur = e.currency || "THB";
+      acc[cur] = (acc[cur] || 0) + Number(e.amount);
+      return acc;
+    }, {});
+    const totalStr = Object.entries(totals).map(([cur, t]) => `${t.toLocaleString("ko-KR")} ${cur}`).join(" | ");
+    const rows = expenses.map((exp, i) => {
+      const statusBadge = exp.status === "แนบใบเสร็จแล้ว"
+        ? `<span style="color:#16a34a;font-weight:700">✅ 영수증 첨부됨</span>`
+        : `<span style="color:#7c3aed;font-weight:700">⏳ 결제 대기</span>`;
+      const date = exp.date ? new Date(exp.date).toLocaleDateString("ko-KR") : "—";
+      const amount = `${Number(exp.amount).toLocaleString("ko-KR")} ${exp.currency || "THB"}`;
+      const catKo = KO_CATEGORY[exp.category] || exp.category;
+      return `<tr style="background:${i % 2 === 0 ? "#fff" : "#f8fafc"}">
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;font-family:monospace;color:#b91c1c">${exp.number}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${catKo}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-weight:700;text-align:right;white-space:nowrap">${amount}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px">${statusBadge}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:11px;color:#4b5563">${exp.receiptNumber || "—"}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${exp.notes || "—"}</td>
+        <td style="padding:8px 10px;border-bottom:1px solid #e2e8f0;font-size:12px;color:#6b7280;white-space:nowrap">${date}</td>
+      </tr>`;
+    }).join("");
+
+    const win = window.open("", "_blank");
+    if (!win) { showToast("팝업을 허용해 주세요", false); return; }
+    win.document.write(`<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
+      <title>지출 보고서</title>
+      <style>
+        body { font-family: 'Malgun Gothic', 'Noto Sans KR', Arial, sans-serif; padding: 28px; color: #111; margin: 0; }
+        h2 { margin: 0 0 4px; font-size: 20px; }
+        .sub { color: #555; font-size: 12px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #1e293b; color: #fff; padding: 9px 10px; text-align: left; font-size: 12px; }
+        th:nth-child(3) { text-align: right; }
+        td:nth-child(3) { text-align: right; }
+        .total-row { background: #fef2f2; font-weight: 700; }
+        .total-row td { padding: 10px; border-top: 2px solid #b91c1c; color: #b91c1c; font-size: 14px; }
+        .print-btn { margin-top: 20px; padding: 9px 22px; font-size: 14px; cursor: pointer; background: #1e40af; color: #fff; border: none; border-radius: 6px; }
+        @media print { .print-btn { display: none; } body { padding: 12px; } }
+      </style>
+    </head><body>
+      <h2>📋 지출 보고서</h2>
+      <div class="sub">GOEUN SERVER HUB · 인쇄일시: ${new Date().toLocaleString("ko-KR")} · 총 ${expenses.length}건</div>
+      <table>
+        <thead><tr>
+          <th>번호</th><th>카테고리</th><th>금액</th><th>상태</th><th>영수증 번호</th><th>비고</th><th>날짜</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="total-row">
+          <td colspan="2">합계</td>
+          <td colspan="5">${totalStr}</td>
+        </tr></tfoot>
+      </table>
+      <button class="print-btn" onclick="window.print()">🖨️ 이 보고서 인쇄</button>
     </body></html>`);
     win.document.close();
   };
@@ -856,12 +1009,83 @@ export default function ClientsUsersClient({ session }) {
     return source;
   };
 
+  const printCargoInvoice = (o) => {
+    const dirLabel = o.direction === "TH_TO_KR" ? "🇹🇭 ไทย → เกาหลี 🇰🇷" : "🇰🇷 เกาหลี → ไทย 🇹🇭";
+    const sym = o.currency === "KRW" ? "₩" : o.currency === "USD" ? "$" : "฿";
+    const fmt = n => Number(n || 0).toLocaleString("th-TH");
+    const profit = Number(o.income || 0) - Number(o.expense || 0);
+    const dateStr = o.createdAt ? new Date(o.createdAt).toLocaleDateString("th-TH", { year: "numeric", month: "long", day: "numeric" }) : "—";
+    const win = window.open("", "_blank");
+    if (!win) { showToast("กรุณาอนุญาต popup", false); return; }
+    win.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>ใบแจ้งค่าใช้จ่าย ${o.number}</title>
+<style>
+  @media print { html { background:#fff; } .no-print { display:none; } }
+  html { background:#e8edf2; font-family:'Noto Sans Thai',sans-serif; margin:0; padding:20px; color-scheme:light; }
+  .paper { background:#fff; width:210mm; max-width:100%; margin:0 auto; padding:28mm 22mm; box-shadow:0 4px 32px rgba(0,0,0,.15); min-height:297mm; }
+  h1 { font-size:22px; font-weight:900; color:#1a1a1a; margin:0 0 4px; }
+  .sub { font-size:13px; color:#666; margin-bottom:24px; }
+  .divider { border:none; border-top:2px solid #facc15; margin:18px 0; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { background:#fef9c3; padding:9px 12px; text-align:left; font-weight:700; border:1px solid #e2e8f0; }
+  td { padding:9px 12px; border:1px solid #e2e8f0; vertical-align:top; }
+  .label { font-size:11px; color:#64748b; font-weight:600; }
+  .val { font-size:14px; color:#1a1a1a; font-weight:600; }
+  .badge { display:inline-block; padding:3px 12px; border-radius:99px; font-size:12px; font-weight:700; background:#fef9c3; color:#92400e; }
+  .income { color:#15803d; font-weight:800; font-size:16px; }
+  .expense { color:#dc2626; font-weight:700; }
+  .profit { font-weight:900; font-size:18px; color:${profit >= 0 ? "#15803d" : "#dc2626"}; }
+  .footer { margin-top:40px; text-align:center; font-size:11px; color:#94a3b8; }
+  .print-btn { display:block; margin:16px auto; padding:10px 32px; background:#facc15; border:none; border-radius:8px; font-size:14px; font-weight:700; cursor:pointer; }
+</style></head><body>
+<div class="paper">
+  <div class="no-print"><button class="print-btn" onclick="window.print()">🖨️ พิมพ์ / บันทึก PDF</button></div>
+  <h1>✈️ ใบแจ้งค่าใช้จ่ายคาโก้</h1>
+  <div class="sub">GOEUN SERVER HUB · บริการส่งสินค้าไทย-เกาหลี ทางเครื่องบิน</div>
+  <hr class="divider"/>
+  <table style="margin-bottom:16px">
+    <tr><th>เลขที่พัสดุ</th><td><strong style="font-family:monospace">${o.number}</strong></td><th>วันที่รับ</th><td>${dateStr}</td></tr>
+    <tr><th>เส้นทาง</th><td colspan="3">${dirLabel}</td></tr>
+    <tr><th>ผู้ส่ง</th><td>${o.senderName}${o.senderPhone ? " · " + o.senderPhone : ""}</td><th>ผู้รับ</th><td>${o.receiverName}${o.receiverPhone ? " · " + o.receiverPhone : ""}</td></tr>
+    ${o.receiverAddress ? `<tr><th>ที่อยู่ผู้รับ</th><td colspan="3">${o.receiverAddress}</td></tr>` : ""}
+    <tr><th>รายการสินค้า</th><td colspan="3">${o.itemDesc || "—"}</td></tr>
+    <tr><th>น้ำหนัก</th><td>${o.weightKg ? o.weightKg + " kg" : "—"}</td><th>ขนาด/บรรจุ</th><td>${o.sizeNote || "—"}</td></tr>
+    ${o.trackingCode ? `<tr><th>Tracking Code</th><td colspan="3" style="font-family:monospace">${o.trackingCode}</td></tr>` : ""}
+    ${o.notes ? `<tr><th>หมายเหตุ</th><td colspan="3">${o.notes}</td></tr>` : ""}
+  </table>
+  <hr class="divider"/>
+  <table>
+    <tr><th style="width:33%">💰 รายรับ (ค่าส่งที่เก็บลูกค้า)</th><th style="width:33%">📤 ต้นทุน (ค่าส่งจริง)</th><th>กำไร</th></tr>
+    <tr>
+      <td class="income">${sym}${fmt(o.income)}</td>
+      <td class="expense">${sym}${fmt(o.expense)}</td>
+      <td class="profit">${sym}${fmt(profit)}</td>
+    </tr>
+  </table>
+  <div class="footer">© GOEUN SERVER HUB · พิมพ์เมื่อ ${new Date().toLocaleString("th-TH")}</div>
+</div></body></html>`);
+    win.document.close();
+  };
+
   const doPrint = () => {
     const items = getReportItems();
     const isInv = reportDataType === "invoice";
-    const modeLabel = reportMode === "number" ? `เลขที่ "${reportInvNum}"` :
-      reportMode === "date" ? `วันที่ ${new Date(reportDate + "T00:00:00").toLocaleDateString("th-TH")}` :
-      `ช่วง ${reportFrom ? new Date(reportFrom + "T00:00:00").toLocaleDateString("th-TH") : "—"} ถึง ${reportTo ? new Date(reportTo + "T00:00:00").toLocaleDateString("th-TH") : "—"}`;
+    const KO_CATEGORY = {
+      "ค่าเช่าเซิร์ฟเวอร์/โดเมน": "서버/도메인 임대료",
+      "ค่าบริการภายนอก": "외부 서비스 비용",
+      "ค่าแรง/เงินเดือน": "인건비/급여",
+      "ค่าอุปกรณ์/ซอฟต์แวร์": "장비/소프트웨어 비용",
+      "ค่าโฆษณา": "광고비",
+      "ค่าสาธารณูปโภค": "공공요금",
+      "อื่นๆ": "기타",
+    };
+    const modeLabel = isInv
+      ? (reportMode === "number" ? `เลขที่ "${reportInvNum}"` :
+         reportMode === "date" ? `วันที่ ${new Date(reportDate + "T00:00:00").toLocaleDateString("th-TH")}` :
+         `ช่วง ${reportFrom ? new Date(reportFrom + "T00:00:00").toLocaleDateString("th-TH") : "—"} ถึง ${reportTo ? new Date(reportTo + "T00:00:00").toLocaleDateString("th-TH") : "—"}`)
+      : (reportMode === "number" ? `번호 "${reportInvNum}"` :
+         reportMode === "date" ? `날짜: ${new Date(reportDate + "T00:00:00").toLocaleDateString("ko-KR")}` :
+         `기간: ${reportFrom ? new Date(reportFrom + "T00:00:00").toLocaleDateString("ko-KR") : "—"} ~ ${reportTo ? new Date(reportTo + "T00:00:00").toLocaleDateString("ko-KR") : "—"}`);
     const totalAmt = items.reduce((s, i) => s + Number(i.amount), 0);
     const rows = items.map(item => {
       if (isInv) {
@@ -876,19 +1100,23 @@ export default function ClientsUsersClient({ session }) {
           <td>${new Date(item.createdAt).toLocaleDateString("th-TH")}</td>
         </tr>`;
       } else {
+        const catKo = KO_CATEGORY[item.category] || item.category;
+        const statusKo = item.status === "แนบใบเสร็จแล้ว" ? "영수증 첨부됨" : "결제 대기";
         return `<tr>
           <td>${item.number}</td>
-          <td>${item.category}</td>
-          <td style="text-align:right">${Number(item.amount).toLocaleString("th-TH")} ${item.currency}</td>
+          <td>${catKo}</td>
+          <td style="text-align:right">${Number(item.amount).toLocaleString("ko-KR")} ${item.currency}</td>
+          <td>${statusKo}</td>
+          <td>${item.receiptNumber || "—"}</td>
           <td>${item.notes || "—"}</td>
-          <td>${new Date(item.date).toLocaleDateString("th-TH")}</td>
+          <td>${new Date(item.date).toLocaleDateString("ko-KR")}</td>
         </tr>`;
       }
     }).join("");
     const headers = isInv
       ? "<th>เลข Invoice</th><th>บริษัท</th><th>ยอด</th><th>สถานะ</th><th>วันครบกำหนด</th><th>หมายเหตุ</th><th>สร้างเมื่อ</th>"
-      : "<th>เลขที่</th><th>หมวดหมู่</th><th>ยอด</th><th>หมายเหตุ</th><th>วันที่</th>";
-    const colspan = isInv ? 7 : 5;
+      : "<th>번호</th><th>카테고리</th><th>금액</th><th>상태</th><th>영수증 번호</th><th>비고</th><th>날짜</th>";
+    const colspan = isInv ? 7 : 7;
 
     // For expense report: append JPG/JPEG attachments into the same printable page.
     const expenseImageAttachments = isInv ? [] : items.flatMap((item) => {
@@ -916,30 +1144,30 @@ export default function ClientsUsersClient({ session }) {
       : "";
 
     const win = window.open("", "_blank");
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
-      <title>รายงาน${isInv ? "Invoice" : "ค่าใช้จ่าย"}</title>
+    win.document.write(`<!DOCTYPE html><html lang="${isInv ? "th" : "ko"}"><head><meta charset="UTF-8">
+      <title>${isInv ? "รายงาน Invoice" : "지출 보고서"}</title>
       <style>
-        body { font-family: 'Sarabun', Arial, sans-serif; padding: 24px; color: #111; font-size: 13px; }
+        body { font-family: ${isInv ? "'Sarabun', Arial" : "'Malgun Gothic', 'Noto Sans KR', Arial"}, sans-serif; padding: 24px; color: #111; font-size: 13px; }
         h2 { margin-bottom: 4px; }
         .sub { color: #555; margin-bottom: 16px; font-size: 12px; }
         table { width: 100%; border-collapse: collapse; }
         th { background: #1a1a2e; color: #fff; padding: 8px 10px; text-align: left; }
         td { padding: 7px 10px; border-bottom: 1px solid #ddd; }
         tr:nth-child(even) td { background: #f5f5f5; }
+        td:nth-child(3) { text-align: right; }
         .total { margin-top: 14px; font-size: 14px; font-weight: 700; text-align: right; }
         .attach-wrap { display: block; }
         .attach-card { margin: 0 0 18px; }
         .attach-meta { font-size: 12px; color: #334155; margin: 0 0 6px; }
         .attach-img { width: 100%; height: auto; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
-        @media print { .attach-card { page-break-inside: avoid; } }
-        @media print { button { display: none; } }
+        @media print { .attach-card { page-break-inside: avoid; } button { display: none; } }
       </style></head><body>
-      <h2>รายงาน${isInv ? "Invoice" : "ค่าใช้จ่าย"} — ${modeLabel}</h2>
-      <div class="sub">พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")} · รายการทั้งหมด ${items.length} รายการ</div>
-      <table><thead><tr>${headers}</tr></thead><tbody>${rows || `<tr><td colspan="${colspan}" style="text-align:center;padding:24px;color:#888">ไม่พบรายการ</td></tr>`}</tbody></table>
-      <div class="total">รวมทั้งสิ้น: ${totalAmt.toLocaleString("th-TH")} ${items[0]?.currency || "THB"}</div>
+      <h2>${isInv ? `รายงาน Invoice — ${modeLabel}` : `📋 지출 보고서 — ${modeLabel}`}</h2>
+      <div class="sub">${isInv ? `พิมพ์เมื่อ: ${new Date().toLocaleString("th-TH")} · รายการทั้งหมด ${items.length} รายการ` : `인쇄일시: ${new Date().toLocaleString("ko-KR")} · 총 ${items.length}건 · GOEUN SERVER HUB`}</div>
+      <table><thead><tr>${headers}</tr></thead><tbody>${rows || `<tr><td colspan="${colspan}" style="text-align:center;padding:24px;color:#888">${isInv ? "ไม่พบรายการ" : "항목 없음"}</td></tr>`}</tbody></table>
+      <div class="total">${isInv ? `รวมทั้งสิ้น: ${totalAmt.toLocaleString("th-TH")} ${items[0]?.currency || "THB"}` : `합계: ${totalAmt.toLocaleString("ko-KR")} ${items[0]?.currency || "KRW"}`}</div>
       ${attachmentHtml}
-      <br/><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer">🖨️ พิมพ์</button>
+      <br/><button onclick="window.print()" style="padding:8px 20px;font-size:14px;cursor:pointer">${isInv ? "🖨️ พิมพ์" : "🖨️ 인쇄"}</button>
     </body></html>`);
     win.document.close();
   };
@@ -1665,6 +1893,20 @@ export default function ClientsUsersClient({ session }) {
             onClick={openAddReceipt}>
             🧾 บริการออกใบเสร็จของผู้ใช้บริการเรา
           </button>
+          <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "9px 20px", fontSize: 14, fontWeight: 700 }}
+            onClick={() => setTab("cargo")}>
+            ✈️ บริการคาโก้ ไทย-เกาหลี
+          </button>
+          <button style={{ ...S.btn("#1a0a2a", "#d946ef"), border: "1px solid #a21caf", padding: "9px 20px", fontSize: 14, fontWeight: 700 }}
+            onClick={() => setTab("momo")}>
+            🏠 MoMo Space Partner
+          </button>
+          {tab === "expenses" && (
+            <button style={{ ...S.btn("#14532d", "#4ade80"), border: "2px solid #4ade80", padding: "9px 20px", fontSize: 14, fontWeight: 700 }}
+              onClick={printExpenseReport}>
+              🖨️ พิมพ์รายงานค่าใช้จ่าย
+            </button>
+          )}
         </div>
 
         {/* ── CLIENTS TAB ── */}
@@ -2052,15 +2294,21 @@ export default function ClientsUsersClient({ session }) {
         {/* ── EXPENSES TAB ── */}
         {tab === "expenses" && (
           <div style={S.card}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-              <div style={{ fontSize: 13, color: "#8b8fa8" }}>บันทึกค่าใช้จ่ายทั้งหมด {expenses.length} รายการ
-                {expenses.length > 0 && (
-                  <span style={{ marginLeft: 12, color: "#f87171", fontWeight: 700 }}>
-                    รวม: {Object.entries(expenses.reduce((acc, e) => { const cur = e.currency || "THB"; acc[cur] = (acc[cur] || 0) + Number(e.amount); return acc; }, {})).map(([cur, total]) => `${total.toLocaleString("th-TH")} ${cur}`).join(" | ")}
-                  </span>
-                )}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 13, color: "#8b8fa8" }}>บันทึกค่าใช้จ่ายทั้งหมด {expenses.length} รายการ
+                  {expenses.length > 0 && (
+                    <span style={{ marginLeft: 12, color: "#f87171", fontWeight: 700 }}>
+                      รวม: {Object.entries(expenses.reduce((acc, e) => { const cur = e.currency || "THB"; acc[cur] = (acc[cur] || 0) + Number(e.amount); return acc; }, {})).map(([cur, total]) => `${total.toLocaleString("th-TH")} ${cur}`).join(" | ")}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={printExpenseReport}
+                  style={{ background: "#14532d", color: "#4ade80", border: "1px solid #166534", borderRadius: 6, padding: "7px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                >🖨️ พิมพ์รายงาน</button>
                 <button style={S.btn("#3d1f1f", "#f87171")} onClick={openAddExpense}>📝 สร้างบันทึกค่าใช้จ่าย</button>
               </div>
             </div>
@@ -2105,7 +2353,478 @@ export default function ClientsUsersClient({ session }) {
             </div>
           </div>
         )}
+
+        {/* ── CARGO TAB ── */}
+        {tab === "cargo" && (
+          <div style={S.card}>
+            {/* Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 800, color: "#facc15" }}>✈️ คาโก้ ส่งสินค้าไทย-เกาหลี ทางเครื่อง</div>
+                <div style={{ fontSize: 12, color: "#8b8fa8", marginTop: 2 }}>항공 화물 서비스 · {cargoOrders.length} รายการ</div>
+              </div>
+            </div>
+
+            {/* Sub-tab nav */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 20, overflowX: "auto", paddingBottom: 8, borderBottom: "1px solid #2a2d3a" }}>
+              {[
+                { key: "add",           icon: "📦", label: "รายการส่งสินค้า" },
+                { key: "status",        icon: "🔄", label: "อัพเดตสถานะ" },
+                { key: "weight",        icon: "⚖️", label: "น้ำหนัก & ค่าใช้จ่าย" },
+                { key: "payment",       icon: "💰", label: "ยืนยันชำระเงิน" },
+                { key: "shipping-cost", icon: "📤", label: "บันทึกค่าส่ง" },
+                { key: "ledger",        icon: "📊", label: "สรุปบัญชี" },
+              ].map(st => (
+                <button key={st.key} onClick={() => setCargoSubTab(st.key)} style={{ padding: "8px 14px", borderRadius: 8, border: cargoSubTab === st.key ? "none" : "1px solid #2a2d3a", background: cargoSubTab === st.key ? "#facc15" : "#1e2130", color: cargoSubTab === st.key ? "#000" : "#8b8fa8", fontWeight: cargoSubTab === st.key ? 800 : 500, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  {st.icon} {st.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Shared Stats (all sub-tabs) ── */}
+            {(() => {
+              const _total = cargoOrders.length;
+              const _income = cargoOrders.reduce((s, o) => s + Number(o.income || 0), 0);
+              const _expense = cargoOrders.reduce((s, o) => s + Number(o.expense || 0), 0);
+              const _done = cargoOrders.filter(o => o.status === "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว").length;
+              const _profit = _income - _expense;
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 10, marginBottom: 16 }}>
+                  {[
+                    { label: "รายการทั้งหมด", val: _total, color: "#facc15", icon: "📦" },
+                    { label: "จัดส่งสำเร็จ", val: _done, color: "#60a5fa", icon: "✅" },
+                    { label: "รายรับรวม", val: `฿${_income.toLocaleString()}`, color: "#4ade80", icon: "💰" },
+                    { label: "ต้นทุนรวม", val: `฿${_expense.toLocaleString()}`, color: "#f87171", icon: "📤" },
+                    { label: "กำไรสุทธิ", val: `${_profit >= 0 ? "+" : ""}฿${_profit.toLocaleString()}`, color: _profit >= 0 ? "#4ade80" : "#f87171", icon: "📈" },
+                  ].map((s, i) => (
+                    <div key={i} style={{ background: "#1a1d27", border: "1px solid #2a2d3a", borderRadius: 10, padding: "12px 14px" }}>
+                      <div style={{ fontSize: 18 }}>{s.icon}</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: s.color, marginTop: 3 }}>{s.val}</div>
+                      <div style={{ fontSize: 11, color: "#8b8fa8", marginTop: 2 }}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {/* ── Sub 1: รายการส่งสินค้า ── */}
+            {cargoSubTab === "add" && (<>
+              {/* Controls */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <input style={{ ...S.input, maxWidth: 220 }} placeholder="🔍 ค้นหาชื่อ / เลขที่..." value={cargoSearch} onChange={e => setCargoSearch(e.target.value)} />
+                <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "9px 18px", fontWeight: 700 }}
+                  onClick={() => { setEditCargoId(null); setCargoForm({ senderName: "", senderPhone: "", receiverName: "", receiverPhone: "", receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "", itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว", trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "" }); setCargoModal(true); }}>
+                  + เพิ่มรายการส่ง
+                </button>
+              </div>
+              {/* Table */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr style={{ background: "#1e2130" }}>
+                    {["เลขที่", "ผู้ส่ง", "ผู้รับ", "เส้นทาง", "น้ำหนัก", "รายรับ", "ต้นทุน", "สถานะ", "Tracking", "วันที่", ""].map((h, i) => (
+                      <th key={i} style={{ padding: "9px 10px", textAlign: "left", color: "#8b8fa8", fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", borderBottom: "1px solid #2a2d3a" }}>{h}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>
+                    {cargoOrders.filter(o => { if (!cargoSearch) return true; const q = cargoSearch.toLowerCase(); return o.number.toLowerCase().includes(q) || o.senderName.toLowerCase().includes(q) || o.receiverName.toLowerCase().includes(q) || (o.trackingCode || "").toLowerCase().includes(q); }).map((o, i) => {
+                      const SC = { "รับพัสดุเข้าคลังแล้ว": "#facc15", "กำลังรีแพ็คพัสดุ": "#fb923c", "พัสดุกำลังเตรียมขึ้นเครื่อง": "#a78bfa", "พัสดุกำลังดำเนินการศุลกากร": "#38bdf8", "พัสดุกำลังจัดส่งไปยังปลายทาง": "#60a5fa", "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว": "#4ade80", "มีปัญหา": "#f87171" };
+                      const c = SC[o.status] || "#8b8fa8";
+                      return (
+                        <tr key={o.id} style={{ borderBottom: "1px solid #2a2d3a", background: i % 2 === 0 ? "#1a1d27" : "#1e2130" }}>
+                          <td style={{ padding: "8px 10px", color: "#facc15", fontFamily: "monospace", fontSize: 11 }}>{o.number}</td>
+                          <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>{o.senderName}<br/><span style={{ fontSize: 11, color: "#64748b" }}>{o.senderPhone || ""}</span></td>
+                          <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>{o.receiverName}<br/><span style={{ fontSize: 11, color: "#64748b" }}>{o.receiverPhone || ""}</span></td>
+                          <td style={{ padding: "8px 10px" }}><span style={{ padding: "2px 7px", borderRadius: 99, fontSize: 11, fontWeight: 700, background: o.direction === "TH_TO_KR" ? "#1a1a0a" : "#0a1a2a", color: o.direction === "TH_TO_KR" ? "#facc15" : "#60a5fa" }}>{o.direction === "TH_TO_KR" ? "🇹🇭→🇰🇷" : "🇰🇷→🇹🇭"}</span></td>
+                          <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>{o.weightKg ? `${o.weightKg} kg` : "—"}</td>
+                          <td style={{ padding: "8px 10px", color: "#4ade80", fontWeight: 700 }}>{Number(o.income || 0).toLocaleString()} {o.currency}</td>
+                          <td style={{ padding: "8px 10px", color: "#f87171" }}>{Number(o.expense || 0).toLocaleString()} {o.currency}</td>
+                          <td style={{ padding: "8px 10px" }}><span style={{ padding: "3px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700, color: c, background: c + "22", border: `1px solid ${c}44` }}>{o.status}</span></td>
+                          <td style={{ padding: "8px 10px", color: "#8b8fa8", fontSize: 11 }}>{o.trackingCode || "—"}</td>
+                          <td style={{ padding: "8px 10px", color: "#64748b", fontSize: 11 }}>{new Date(o.createdAt).toLocaleDateString("th-TH")}</td>
+                          <td style={{ padding: "8px 10px" }}><div style={{ display: "flex", gap: 5 }}>
+                            <button style={S.btn("#1e2d3d", "#60a5fa")} onClick={() => { setEditCargoId(o.id); setCargoForm({ senderName: o.senderName || "", senderPhone: o.senderPhone || "", receiverName: o.receiverName || "", receiverPhone: o.receiverPhone || "", receiverAddress: o.receiverAddress || "", direction: o.direction || "TH_TO_KR", weightKg: o.weightKg || "", sizeNote: o.sizeNote || "", itemDesc: o.itemDesc || "", currency: o.currency || "THB", income: o.income || "", expense: o.expense || "", status: o.status || "รับพัสดุเข้าคลังแล้ว", trackingCode: o.trackingCode || "", passportNo: o.passportNo || "", notes: o.notes || "", shippedAt: o.shippedAt ? o.shippedAt.slice(0, 10) : "", deliveredAt: o.deliveredAt ? o.deliveredAt.slice(0, 10) : "" }); setCargoModal(true); }}>✏️</button>
+                            <button style={S.btn("#2a1f1f", "#f87171")} onClick={async () => { if (!confirm(`ลบ ${o.number}?`)) return; await fetch(`/api/admin/cargo/${o.id}`, { method: "DELETE" }); showToast("ลบแล้ว"); loadCargo(); }}>🗑️</button>
+                          </div></td>
+                        </tr>
+                      );
+                    })}
+                    {cargoOrders.length === 0 && <tr><td colSpan={11} style={{ padding: 32, textAlign: "center", color: "#64748b" }}>ยังไม่มีรายการส่งสินค้า</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </>)}
+
+            {/* ── Sub 2: อัพเดตสถานะ ── */}
+            {cargoSubTab === "status" && (<>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: "#8b8fa8" }}>เปลี่ยนสถานะแต่ละรายการแล้วกด "บันทึก"</div>
+                <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "8px 16px", fontWeight: 700, fontSize: 12 }} onClick={() => { setEditCargoId(null); setCargoForm({ senderName: "", senderPhone: "", receiverName: "", receiverPhone: "", receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "", itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว", trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "" }); setCargoModal(true); }}>+ เพิ่มรายการ</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {cargoOrders.map(o => {
+                  const SC = { "รับพัสดุเข้าคลังแล้ว": "#facc15", "กำลังรีแพ็คพัสดุ": "#fb923c", "พัสดุกำลังเตรียมขึ้นเครื่อง": "#a78bfa", "พัสดุกำลังดำเนินการศุลกากร": "#38bdf8", "พัสดุกำลังจัดส่งไปยังปลายทาง": "#60a5fa", "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว": "#4ade80", "มีปัญหา": "#f87171" };
+                  const curStatus = (cargoInlineEdits[o.id] || {}).status ?? o.status;
+                  const c = SC[curStatus] || "#8b8fa8";
+                  const dirty = (cargoInlineEdits[o.id] || {}).status !== undefined && (cargoInlineEdits[o.id] || {}).status !== o.status;
+                  return (
+                    <div key={o.id} style={{ background: "#1e2130", borderRadius: 10, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", border: dirty ? "1px solid #facc1566" : "1px solid #2a2d3a" }}>
+                      <div style={{ fontFamily: "monospace", fontSize: 12, color: "#facc15", minWidth: 150 }}>{o.number}</div>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontSize: 13, color: "#e2e8f0" }}>{o.senderName} → {o.receiverName}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{o.direction === "TH_TO_KR" ? "🇹🇭→🇰🇷" : "🇰🇷→🇹🇭"} · {new Date(o.createdAt).toLocaleDateString("th-TH")}</div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ padding: "3px 10px", borderRadius: 99, fontSize: 11, fontWeight: 700, color: SC[o.status] || "#8b8fa8", background: (SC[o.status] || "#8b8fa8") + "22", border: `1px solid ${(SC[o.status] || "#8b8fa8")}44`, whiteSpace: "nowrap" }}>เดิม: {o.status}</span>
+                        <span style={{ color: "#64748b" }}>→</span>
+                        <select value={curStatus} style={{ ...S.input, maxWidth: 300, borderColor: dirty ? "#facc15" : "#2a2d3a" }}
+                          onChange={e => setCargoInlineEdits(prev => ({ ...prev, [o.id]: { ...(prev[o.id] || {}), status: e.target.value } }))}>
+                          {["รับพัสดุเข้าคลังแล้ว", "กำลังรีแพ็คพัสดุ", "พัสดุกำลังเตรียมขึ้นเครื่อง", "พัสดุกำลังดำเนินการศุลกากร", "พัสดุกำลังจัดส่งไปยังปลายทาง", "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว", "มีปัญหา"].map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <button disabled={!dirty || savingCargoInline[o.id]} style={{ ...S.btn(dirty ? "#1a1a0a" : "#1e2130", dirty ? "#facc15" : "#64748b"), padding: "8px 14px", fontWeight: 700, border: dirty ? "1px solid #ca8a04" : "none" }}
+                          onClick={async () => {
+                            setSavingCargoInline(p => ({ ...p, [o.id]: true }));
+                            const shippedAt = curStatus === "พัสดุกำลังเตรียมขึ้นเครื่อง" && !o.shippedAt ? new Date().toISOString().slice(0,10) : undefined;
+                            const deliveredAt = curStatus === "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว" && !o.deliveredAt ? new Date().toISOString().slice(0,10) : undefined;
+                            const body = { status: curStatus, ...(shippedAt && { shippedAt }), ...(deliveredAt && { deliveredAt }) };
+                            await fetch(`/api/admin/cargo/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                            showToast("อัปเดตสถานะแล้ว ✅");
+                            setCargoInlineEdits(p => { const n = { ...p }; delete n[o.id]; return n; });
+                            setSavingCargoInline(p => ({ ...p, [o.id]: false }));
+                            loadCargo();
+                          }}>
+                          {savingCargoInline[o.id] ? "⏳" : "💾 บันทึก"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cargoOrders.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>ยังไม่มีรายการ</div>}
+              </div>
+            </>)}
+
+            {/* ── Sub 3: น้ำหนัก & ค่าใช้จ่าย + พิมพ์ใบ ── */}
+            {cargoSubTab === "weight" && (<>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: "#8b8fa8" }}>บันทึกน้ำหนัก ขนาด รายการสินค้า รายรับ ต้นทุน แล้วกด "บันทึก" หรือ "พิมพ์ใบแจ้งหนี้"</div>
+                <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "8px 16px", fontWeight: 700, fontSize: 12 }} onClick={() => { setEditCargoId(null); setCargoForm({ senderName: "", senderPhone: "", receiverName: "", receiverPhone: "", receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "", itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว", trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "" }); setCargoModal(true); }}>+ เพิ่มรายการ</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {cargoOrders.map(o => {
+                  const e = cargoInlineEdits[o.id] || {};
+                  const dirty = Object.keys(e).some(k => e[k] !== undefined);
+                  const income = e.income !== undefined ? e.income : (o.income ?? "");
+                  const expense = e.expense !== undefined ? e.expense : (o.expense ?? "");
+                  const profit = Number(income || 0) - Number(expense || 0);
+                  return (
+                    <div key={o.id} style={{ background: "#1e2130", borderRadius: 10, padding: "16px 18px", border: dirty ? "1px solid #facc1566" : "1px solid #2a2d3a" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+                        <div>
+                          <span style={{ fontFamily: "monospace", fontSize: 12, color: "#facc15" }}>{o.number}</span>
+                          <span style={{ fontSize: 12, color: "#8b8fa8", marginLeft: 12 }}>{o.senderName} → {o.receiverName}</span>
+                        </div>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => printCargoInvoice({ ...o, ...(cargoInlineEdits[o.id] || {}) })} style={{ ...S.btn("#1a2a1a", "#4ade80"), padding: "7px 14px", fontSize: 12 }}>🖨️ พิมพ์ใบแจ้งหนี้</button>
+                          <button disabled={!dirty || savingCargoInline[o.id]} style={{ ...S.btn(dirty ? "#1a1a0a" : "#1a1d27", dirty ? "#facc15" : "#64748b"), padding: "7px 14px", fontSize: 12, fontWeight: 700, border: dirty ? "1px solid #ca8a04" : "none" }}
+                            onClick={async () => {
+                              setSavingCargoInline(p => ({ ...p, [o.id]: true }));
+                              const body = {};
+                              const ed = cargoInlineEdits[o.id] || {};
+                              if (ed.weightKg !== undefined) body.weightKg = ed.weightKg ? Number(ed.weightKg) : null;
+                              if (ed.sizeNote !== undefined) body.sizeNote = ed.sizeNote;
+                              if (ed.itemDesc !== undefined) body.itemDesc = ed.itemDesc;
+                              if (ed.income !== undefined) body.income = Number(ed.income || 0);
+                              if (ed.expense !== undefined) body.expense = Number(ed.expense || 0);
+                              await fetch(`/api/admin/cargo/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                              showToast("บันทึกแล้ว ✅");
+                              setCargoInlineEdits(p => { const n = { ...p }; delete n[o.id]; return n; });
+                              setSavingCargoInline(p => ({ ...p, [o.id]: false }));
+                              loadCargo();
+                            }}>
+                            {savingCargoInline[o.id] ? "⏳" : "💾 บันทึก"}
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 10 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#8b8fa8", marginBottom: 4 }}>⚖️ น้ำหนัก (kg)</div>
+                          <input style={S.input} type="number" step="0.1" min="0" placeholder="0.0"
+                            value={e.weightKg !== undefined ? e.weightKg : (o.weightKg ?? "")}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), weightKg: ev.target.value } }))} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#8b8fa8", marginBottom: 4 }}>📐 ขนาด/บรรจุ</div>
+                          <input style={S.input} placeholder="30x40x50 cm"
+                            value={e.sizeNote !== undefined ? e.sizeNote : (o.sizeNote ?? "")}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), sizeNote: ev.target.value } }))} />
+                        </div>
+                        <div style={{ gridColumn: "1/-1" }}>
+                          <div style={{ fontSize: 11, color: "#8b8fa8", marginBottom: 4 }}>📋 รายการสินค้า</div>
+                          <input style={S.input} placeholder="เสื้อผ้า, อาหาร..."
+                            value={e.itemDesc !== undefined ? e.itemDesc : (o.itemDesc ?? "")}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), itemDesc: ev.target.value } }))} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#4ade80", marginBottom: 4 }}>💰 รายรับ (ค่าส่ง)</div>
+                          <input style={{ ...S.input, borderColor: "#4ade8044" }} type="number" min="0" placeholder="0"
+                            value={income}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), income: ev.target.value } }))} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#f87171", marginBottom: 4 }}>📤 ต้นทุน</div>
+                          <input style={{ ...S.input, borderColor: "#f8717144" }} type="number" min="0" placeholder="0"
+                            value={expense}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), expense: ev.target.value } }))} />
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
+                          <div style={{ fontSize: 11, color: "#8b8fa8", marginBottom: 4 }}>กำไร</div>
+                          <div style={{ padding: "9px 12px", background: "#141720", borderRadius: 8, fontWeight: 800, fontSize: 14, color: profit >= 0 ? "#4ade80" : "#f87171" }}>
+                            {profit >= 0 ? "+" : ""}{profit.toLocaleString()} {o.currency}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cargoOrders.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>ยังไม่มีรายการ</div>}
+              </div>
+            </>)}
+
+            {/* ── Sub 4: ยืนยันการชำระเงิน ── */}
+            {cargoSubTab === "payment" && (<>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: "#8b8fa8" }}>ยืนยันว่าลูกค้าชำระค่าส่งแล้ว — กรอกยอดรับและกด "ยืนยัน"</div>
+                <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "8px 16px", fontWeight: 700, fontSize: 12 }} onClick={() => { setEditCargoId(null); setCargoForm({ senderName: "", senderPhone: "", receiverName: "", receiverPhone: "", receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "", itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว", trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "" }); setCargoModal(true); }}>+ เพิ่มรายการ</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {cargoOrders.map(o => {
+                  const e = cargoInlineEdits[o.id] || {};
+                  const income = e.income !== undefined ? e.income : (o.income ?? "");
+                  const paid = Number(o.income || 0) > 0;
+                  const dirty = e.income !== undefined && String(e.income) !== String(o.income ?? "");
+                  return (
+                    <div key={o.id} style={{ background: "#1e2130", borderRadius: 10, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", border: paid ? "1px solid #4ade8033" : dirty ? "1px solid #facc1566" : "1px solid #2a2d3a" }}>
+                      <div style={{ fontFamily: "monospace", fontSize: 12, color: "#facc15", minWidth: 155 }}>{o.number}</div>
+                      <div style={{ flex: 1, minWidth: 180 }}>
+                        <div style={{ fontSize: 13, color: "#e2e8f0" }}>{o.senderName} → {o.receiverName}</div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>{o.direction === "TH_TO_KR" ? "🇹🇭→🇰🇷" : "🇰🇷→🇹🇭"}</div>
+                      </div>
+                      {paid && !dirty && <span style={{ padding: "4px 12px", borderRadius: 99, background: "#0f2318", border: "1px solid #4ade8066", color: "#4ade80", fontSize: 12, fontWeight: 700 }}>✅ ชำระแล้ว ฿{Number(o.income).toLocaleString()}</span>}
+                      {(!paid || dirty) && <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{ fontSize: 11, color: "#8b8fa8" }}>ยอดรับ ({o.currency}):</div>
+                        <input type="number" min="0" style={{ ...S.input, maxWidth: 130, borderColor: dirty ? "#facc15" : "#2a2d3a" }} placeholder="0"
+                          value={income}
+                          onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), income: ev.target.value } }))} />
+                        <button disabled={!dirty || savingCargoInline[o.id]} style={{ ...S.btn(dirty ? "#0f2318" : "#1e2130", dirty ? "#4ade80" : "#64748b"), padding: "8px 16px", fontWeight: 700, border: dirty ? "1px solid #4ade8066" : "none" }}
+                          onClick={async () => {
+                            setSavingCargoInline(p => ({ ...p, [o.id]: true }));
+                            await fetch(`/api/admin/cargo/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ income: Number(income || 0) }) });
+                            showToast("ยืนยันการชำระเงินแล้ว ✅");
+                            setCargoInlineEdits(p => { const n = { ...p }; delete n[o.id]; return n; });
+                            setSavingCargoInline(p => ({ ...p, [o.id]: false }));
+                            loadCargo();
+                          }}>
+                          {savingCargoInline[o.id] ? "⏳" : "✅ ยืนยัน"}
+                        </button>
+                      </div>}
+                    </div>
+                  );
+                })}
+                {cargoOrders.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>ยังไม่มีรายการ</div>}
+              </div>
+            </>)}
+
+            {/* ── Sub 5: บันทึกค่าใช้จ่ายค่าส่ง ── */}
+            {cargoSubTab === "shipping-cost" && (<>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 13, color: "#8b8fa8" }}>บันทึกต้นทุนค่าส่งจริงที่บริษัทจ่ายออกไป (ค่าเครื่อง, ค่าขนส่งต่อ, ค่าจัดการ)</div>
+                <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "8px 16px", fontWeight: 700, fontSize: 12 }} onClick={() => { setEditCargoId(null); setCargoForm({ senderName: "", senderPhone: "", receiverName: "", receiverPhone: "", receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "", itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว", trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "" }); setCargoModal(true); }}>+ เพิ่มรายการ</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {cargoOrders.map(o => {
+                  const e = cargoInlineEdits[o.id] || {};
+                  const expense = e.expense !== undefined ? e.expense : (o.expense ?? "");
+                  const notes = e.notes !== undefined ? e.notes : (o.notes ?? "");
+                  const dirty = (e.expense !== undefined && String(e.expense) !== String(o.expense ?? "")) || (e.notes !== undefined && e.notes !== (o.notes || ""));
+                  return (
+                    <div key={o.id} style={{ background: "#1e2130", borderRadius: 10, padding: "14px 16px", border: dirty ? "1px solid #f8717166" : "1px solid #2a2d3a" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 12, color: "#facc15" }}>{o.number}</span>
+                        <span style={{ fontSize: 12, color: "#8b8fa8" }}>{o.senderName} → {o.receiverName} · {o.direction === "TH_TO_KR" ? "🇹🇭→🇰🇷" : "🇰🇷→🇹🇭"}</span>
+                        {Number(o.expense) > 0 && <span style={{ padding: "2px 10px", borderRadius: 99, background: "#2a1f1f", border: "1px solid #f8717144", color: "#f87171", fontSize: 11, fontWeight: 700 }}>ต้นทุนเดิม: {Number(o.expense).toLocaleString()} {o.currency}</span>}
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr auto", gap: 10, alignItems: "flex-end" }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#f87171", marginBottom: 4 }}>📤 ต้นทุน ({o.currency})</div>
+                          <input type="number" min="0" style={{ ...S.input, borderColor: "#f8717144" }} placeholder="0"
+                            value={expense}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), expense: ev.target.value } }))} />
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 11, color: "#8b8fa8", marginBottom: 4 }}>💬 หมายเหตุ</div>
+                          <input style={S.input} placeholder="ค่าเครื่องบิน, ค่าขนส่งต่อ..."
+                            value={notes}
+                            onChange={ev => setCargoInlineEdits(p => ({ ...p, [o.id]: { ...(p[o.id] || {}), notes: ev.target.value } }))} />
+                        </div>
+                        <button disabled={!dirty || savingCargoInline[o.id]} style={{ ...S.btn(dirty ? "#2a1f1f" : "#1a1d27", dirty ? "#f87171" : "#64748b"), padding: "9px 16px", fontWeight: 700, border: dirty ? "1px solid #f8717166" : "none" }}
+                          onClick={async () => {
+                            setSavingCargoInline(p => ({ ...p, [o.id]: true }));
+                            await fetch(`/api/admin/cargo/${o.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ expense: Number(expense || 0), notes: notes }) });
+                            showToast("บันทึกค่าส่งแล้ว ✅");
+                            setCargoInlineEdits(p => { const n = { ...p }; delete n[o.id]; return n; });
+                            setSavingCargoInline(p => ({ ...p, [o.id]: false }));
+                            loadCargo();
+                          }}>
+                          {savingCargoInline[o.id] ? "⏳" : "💾 บันทึก"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cargoOrders.length === 0 && <div style={{ padding: 32, textAlign: "center", color: "#64748b" }}>ยังไม่มีรายการ</div>}
+              </div>
+            </>)}
+
+            {/* ── Sub 6: สรุปบัญชีรายรับรายจ่าย ── */}
+            {cargoSubTab === "ledger" && (() => {
+              const totalIncome = cargoOrders.reduce((s, o) => s + Number(o.income || 0), 0);
+              const totalExpense = cargoOrders.reduce((s, o) => s + Number(o.expense || 0), 0);
+              const netProfit = totalIncome - totalExpense;
+              const done = cargoOrders.filter(o => o.status === "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว").length;
+              return (
+                <>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                    <div style={{ fontSize: 13, color: "#8b8fa8" }}>รายงานกำไร / ขาดทุนแต่ละรายการ</div>
+                    <button style={{ ...S.btn("#1a1a0a", "#facc15"), border: "1px solid #ca8a04", padding: "8px 16px", fontWeight: 700, fontSize: 12 }} onClick={() => { setEditCargoId(null); setCargoForm({ senderName: "", senderPhone: "", receiverName: "", receiverPhone: "", receiverAddress: "", direction: "TH_TO_KR", weightKg: "", sizeNote: "", itemDesc: "", currency: "THB", income: "", expense: "", status: "รับพัสดุเข้าคลังแล้ว", trackingCode: "", passportNo: "", notes: "", shippedAt: "", deliveredAt: "" }); setCargoModal(true); }}>+ เพิ่มรายการ</button>
+                  </div>
+                  {/* Per-order P&L table */}
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                      <thead><tr style={{ background: "#1e2130" }}>
+                        {["เลขที่", "ผู้ส่ง → ผู้รับ", "สถานะ", "รายรับ", "ต้นทุน", "กำไร", "วันที่"].map((h, i) => (
+                          <th key={i} style={{ padding: "9px 10px", textAlign: i >= 3 ? "right" : "left", color: "#8b8fa8", fontWeight: 700, fontSize: 11, borderBottom: "1px solid #2a2d3a" }}>{h}</th>
+                        ))}
+                      </tr></thead>
+                      <tbody>
+                        {cargoOrders.map((o, i) => {
+                          const p = Number(o.income || 0) - Number(o.expense || 0);
+                          return (
+                            <tr key={o.id} style={{ borderBottom: "1px solid #2a2d3a", background: i % 2 === 0 ? "#1a1d27" : "#1e2130" }}>
+                              <td style={{ padding: "8px 10px", color: "#facc15", fontFamily: "monospace", fontSize: 11 }}>{o.number}</td>
+                              <td style={{ padding: "8px 10px", color: "#e2e8f0" }}>{o.senderName} → {o.receiverName}</td>
+                              <td style={{ padding: "8px 10px" }}><span style={{ fontSize: 11, color: "#8b8fa8" }}>{o.status}</span></td>
+                              <td style={{ padding: "8px 10px", textAlign: "right", color: "#4ade80", fontWeight: 700 }}>{Number(o.income || 0).toLocaleString()}</td>
+                              <td style={{ padding: "8px 10px", textAlign: "right", color: "#f87171" }}>{Number(o.expense || 0).toLocaleString()}</td>
+                              <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 800, color: p >= 0 ? "#4ade80" : "#f87171" }}>{p >= 0 ? "+" : ""}{p.toLocaleString()}</td>
+                              <td style={{ padding: "8px 10px", color: "#64748b", fontSize: 11 }}>{new Date(o.createdAt).toLocaleDateString("th-TH")}</td>
+                            </tr>
+                          );
+                        })}
+                        {cargoOrders.length > 0 && (
+                          <tr style={{ background: "#141720", fontWeight: 800 }}>
+                            <td colSpan={3} style={{ padding: "10px 10px", color: "#8b8fa8", fontSize: 12 }}>รวมทั้งหมด</td>
+                            <td style={{ padding: "10px 10px", textAlign: "right", color: "#4ade80", fontSize: 13 }}>{totalIncome.toLocaleString()}</td>
+                            <td style={{ padding: "10px 10px", textAlign: "right", color: "#f87171", fontSize: 13 }}>{totalExpense.toLocaleString()}</td>
+                            <td style={{ padding: "10px 10px", textAlign: "right", color: netProfit >= 0 ? "#4ade80" : "#f87171", fontSize: 14 }}>{netProfit >= 0 ? "+" : ""}{netProfit.toLocaleString()}</td>
+                            <td />
+                          </tr>
+                        )}
+                        {cargoOrders.length === 0 && <tr><td colSpan={7} style={{ padding: 32, textAlign: "center", color: "#64748b" }}>ยังไม่มีรายการ</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        )}
+
+        {/* ── MOMO TAB ── */}
+        {tab === "momo" && (
+          <div style={S.card}>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24 }}>
+              <div style={{ fontSize: 40 }}>🏠</div>
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#d946ef" }}>MoMo Space Partner</div>
+                <div style={{ fontSize: 13, color: "#8b8fa8", marginTop: 2 }}>พาร์ทเนอร์พื้นที่และบริการ · 파트너 공간 서비스</div>
+              </div>
+            </div>
+            <div style={{ padding: 40, textAlign: "center", background: "#1a1d27", borderRadius: 12, border: "2px dashed #4a1a60" }}>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>🚧</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: "#d946ef", marginBottom: 8 }}>กำลังพัฒนา</div>
+              <div style={{ fontSize: 13, color: "#64748b" }}>ระบบจัดการ MoMo Space Partner กำลังอยู่ระหว่างการพัฒนา</div>
+              <div style={{ fontSize: 12, color: "#4a1a60", marginTop: 4 }}>Coming soon · 준비 중입니다</div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* ── CARGO MODAL ── */}
+      {cargoModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 24, overflowY: "auto" }}>
+          <div style={{ background: "#16181f", borderRadius: 12, padding: 28, width: "100%", maxWidth: 560, border: "1px solid #2a2d3a", marginTop: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <h5 style={{ margin: 0, color: "#facc15", fontSize: 16 }}>✈️ {editCargoId ? "แก้ไขรายการส่ง" : "เพิ่มรายการส่งสินค้า"}</h5>
+              <button style={{ background: "none", border: "none", color: "#8b8fa8", fontSize: 22, cursor: "pointer" }} onClick={() => setCargoModal(false)}>✕</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>ชื่อผู้ส่ง *</div>
+                <input style={S.input} value={cargoForm.senderName} onChange={e => setCargoForm(f => ({ ...f, senderName: e.target.value }))} placeholder="ชื่อผู้ส่ง" />
+              </div>
+              <div>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>เบอร์ผู้ส่ง</div>
+                <input style={S.input} value={cargoForm.senderPhone} onChange={e => setCargoForm(f => ({ ...f, senderPhone: e.target.value }))} placeholder="0xx-xxx-xxxx" />
+              </div>
+              <div>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>ชื่อผู้รับ *</div>
+                <input style={S.input} value={cargoForm.receiverName} onChange={e => setCargoForm(f => ({ ...f, receiverName: e.target.value }))} placeholder="ชื่อผู้รับ" />
+              </div>
+              <div>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>เบอร์ผู้รับ</div>
+                <input style={S.input} value={cargoForm.receiverPhone} onChange={e => setCargoForm(f => ({ ...f, receiverPhone: e.target.value }))} placeholder="0xx-xxx-xxxx" />
+              </div>
+              <div style={{ gridColumn: "1/-1" }}>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>ที่อยู่ผู้รับ</div>
+                <input style={S.input} value={cargoForm.receiverAddress} onChange={e => setCargoForm(f => ({ ...f, receiverAddress: e.target.value }))} placeholder="ที่อยู่จัดส่ง" />
+              </div>
+              <div>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>เส้นทาง</div>
+                <select style={S.input} value={cargoForm.direction} onChange={e => setCargoForm(f => ({ ...f, direction: e.target.value }))}>
+                  <option value="TH_TO_KR">🇹🇭 ไทย → เกาหลี 🇰🇷</option>
+                  <option value="KR_TO_TH">🇰🇷 เกาหลี → ไทย 🇹🇭</option>
+                </select>
+              </div>
+              <div>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>สถานะ</div>
+                <select style={S.input} value={cargoForm.status} onChange={e => setCargoForm(f => ({ ...f, status: e.target.value }))}>
+                  {["รับพัสดุเข้าคลังแล้ว", "กำลังรีแพ็คพัสดุ", "พัสดุกำลังเตรียมขึ้นเครื่อง", "พัสดุกำลังดำเนินการศุลกากร", "พัสดุกำลังจัดส่งไปยังปลายทาง", "พัสดุจัดส่งหน้าบ้านผู้รับเรียบร้อยแล้ว", "มีปัญหา"].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div style={{ gridColumn: "1/-1" }}>
+                <div style={{ color: "#8b8fa8", fontSize: 11, marginBottom: 4 }}>เลขพาสปอร์ต / เลขศุลกากร</div>
+                <input style={S.input} value={cargoForm.passportNo} onChange={e => setCargoForm(f => ({ ...f, passportNo: e.target.value }))} placeholder="เลขพาสปอร์ต หรือ เลขศุลกากร" />
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+              <button style={S.btn("#1e2130", "#8b8fa8")} onClick={() => setCargoModal(false)}>ยกเลิก</button>
+              <button style={{ ...S.btn("#1a1a0a", "#facc15"), fontWeight: 700 }} disabled={savingCargo} onClick={async () => {
+                if (!cargoForm.senderName || !cargoForm.receiverName) { showToast("กรุณาใส่ชื่อผู้ส่งและผู้รับ", false); return; }
+                setSavingCargo(true);
+                try {
+                  const body = { ...cargoForm, weightKg: cargoForm.weightKg ? Number(cargoForm.weightKg) : null, income: Number(cargoForm.income || 0), expense: Number(cargoForm.expense || 0), shippedAt: cargoForm.shippedAt || null, deliveredAt: cargoForm.deliveredAt || null };
+                  const url = editCargoId ? `/api/admin/cargo/${editCargoId}` : "/api/admin/cargo";
+                  const method = editCargoId ? "PATCH" : "POST";
+                  const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                  const d = await res.json();
+                  if (!res.ok) { showToast(d.error || "บันทึกไม่สำเร็จ", false); return; }
+                  showToast(editCargoId ? "อัปเดตแล้ว ✅" : "เพิ่มรายการแล้ว ✅");
+                  setCargoModal(false); loadCargo();
+                } catch (e) { showToast(e.message, false); } finally { setSavingCargo(false); }
+              }}>{savingCargo ? "⏳ กำลังบันทึก..." : editCargoId ? "💾 บันทึก" : "✈️ เพิ่มรายการ"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── LEDGER MODAL ── */}
       {ledgerModal && (() => {

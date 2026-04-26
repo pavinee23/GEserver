@@ -161,6 +161,10 @@ export const translations = {
         name: "Green Retail Group",
         description: "ระบบมอนิเตอริ่งพลังงานไฟฟ้า",
       },
+      "cargo": {
+        name: "คาโก้ ไทย-เกาหลี",
+        description: "บริการส่งสินค้าทางเครื่องบิน ไทย ↔ เกาหลี ปลอดภัย รวดเร็ว พร้อมติดตามสถานะออนไลน์",
+      },
     },
   },
   en: {
@@ -328,6 +332,10 @@ export const translations = {
         name: "Green Retail Group",
         description: "Electrical Energy Monitoring System",
       },
+      "cargo": {
+        name: "Thai-Korean Cargo",
+        description: "Air freight service Thailand ↔ Korea. Safe, fast, with online shipment tracking.",
+      },
     },
   },
   zh: {
@@ -484,6 +492,10 @@ export const translations = {
         name: "Green Retail Group",
         description: "电力能源监控系统",
       },
+      "cargo": {
+        name: "泰韩货运服务",
+        description: "航空货运服务 泰国 ↔ 韩国，安全快速，支持在线追踪货物状态。",
+      },
     },
   },
   ko: {
@@ -639,6 +651,10 @@ export const translations = {
       "green-retail-energy": {
         name: "Green Retail Group",
         description: "전력 에너지 모니터링 시스템",
+      },
+      "cargo": {
+        name: "태국-한국 카고 서비스",
+        description: "항공 화물 서비스 태국 ↔ 한국. 안전하고 빠른 배송, 온라인 실시간 배송 추적.",
       },
     },
   },

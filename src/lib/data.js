@@ -83,6 +83,17 @@ export const fallbackClients = [
     contact_phone: "02-555-1199",
     system_url: "/energy-dashboard-login",
   },
+  {
+    id: 5,
+    name: "คาโก้ ไทย-เกาหลี / เกาหลี-ไทย",
+    slug: "cargo",
+    description: "บริการส่งสินค้าทางเครื่องบิน ไทย ↔ เกาหลี ปลอดภัย รวดเร็ว พร้อมติดตามสถานะออนไลน์",
+    status: "online",
+    contact_email: "goeunserverhub@gmail.com",
+    contact_phone: "+66 095-241-1833",
+    thumbnail: "/cargo/cargo-plane.jpg",
+    system_url: "/cargo/track",
+  },
 ];
 
 export const filterOptions = [
