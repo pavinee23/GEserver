@@ -1126,6 +1126,18 @@ export default function PageClient() {
                 <div style={{ color: "#cbd5e1", fontSize: "0.85rem", marginTop: "0.4rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
                   📍 {t.addressLine1} {t.addressLine2}
                 </div>
+                <div style={{ marginTop: "0.75rem", borderRadius: "0.75rem", overflow: "hidden", width: "100%", maxWidth: 360, height: 150, border: "1px solid rgba(255,255,255,0.15)" }}>
+                  <iframe
+                    src="https://maps.google.com/maps?q=13.99537020328643,100.38539160043001&output=embed&z=16"
+                    width="100%"
+                    height="150"
+                    style={{ border: 0, display: "block" }}
+                    allowFullScreen
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    title="M-Factory Location"
+                  />
+                </div>
               </div>
             </div>
             <a
@@ -1426,6 +1438,18 @@ export default function PageClient() {
                 {t.addressLine1}
                 <br />
                 {t.addressLine2}
+              </div>
+              <div style={{ borderRadius: "0.9rem", overflow: "hidden", marginBottom: "1.25rem", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <iframe
+                  src="https://maps.google.com/maps?q=13.99537020328643,100.38539160043001&output=embed&z=16"
+                  width="100%"
+                  height="240"
+                  style={{ border: 0, display: "block" }}
+                  allowFullScreen
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                  title="M-Factory Location"
+                />
               </div>
               <a
                 href="https://maps.google.com/maps?q=13.99537020328643,100.38539160043001"
